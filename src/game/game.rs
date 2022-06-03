@@ -16,7 +16,7 @@ pub struct Game {
     initiatives: Vec<i8>,
     next_init_index: usize,
     initiative_pass: usize,
-    initiative_player_map: HashMap<i8, Uuid>,
+    initiative_player_map: HashMap<i8, Vec<Uuid>>,
     combatant_data: HashMap<Uuid, CharacterCombatData>,
     participating: Vec<Uuid>
     
@@ -67,7 +67,7 @@ impl Game {
         self.current_state.to_string()
     }
 
-    pub fn waiting_for(self: &mut Game)->Option<Uuid>
+    pub fn waiting_for(self: &mut Game)->Option<Vec<Uuid>>
     {
         if self.current_state != State::InitiativePass
         {
@@ -83,7 +83,7 @@ impl Game {
         {
             if let Some(char_id) = self.initiative_player_map.get(initiative)
             {
-                return Some(*char_id);
+                return Some((*char_id).clone());
             }
             // else
             // {
@@ -105,7 +105,7 @@ impl Game {
 
     }
 
-    pub fn on_deck(self: &Game) -> Option<Uuid>
+    pub fn on_deck(self: &Game) -> Option<Vec<Uuid>>
     {
         if self.current_state != State::InitiativePass
         {
@@ -117,7 +117,7 @@ impl Game {
             // )));
         }
 
-        let next = self.find_next_character();
+        let next = self.find_next_participant();
         if next >= self.initiatives.len()
         {
             return None;
@@ -132,7 +132,7 @@ impl Game {
         {
             if let Some(char_id) = self.initiative_player_map.get(initiative)
             {
-                return Some(*char_id);
+                return Some((*char_id).clone());
             }
             // else {
             //     return Err(GameError::new
@@ -268,10 +268,11 @@ impl Game {
             });
         }
 
-        if self.participating.contains(&character)
+        if self.combatant_data.contains_key(&character)
         {
             self.initiatives.push(initiative);
-            self.initiative_player_map.insert(initiative, character);
+            let characters = self.initiative_player_map.entry(initiative).or_insert(Vec::new());
+            characters.push(character);
         }
         else
         {
@@ -281,14 +282,23 @@ impl Game {
             });
         }
 
-        if self.initiatives.len() == self.initiative_player_map.len()
+        Ok(())
+    }
+
+    pub fn begin_initiative_passes(self: &mut Game) -> Result<(), GameError>
+    {
+        if self.initiatives.len() != self.combatant_data.len()
         {
-            self.initiatives.sort_by(|a, b| b.cmp(a));
-            self.initiative_pass = 0;
-            self.current_state = State::InitiativePass;
-            self.advance_initiative_pass()?
+            return Err(GameError::new(
+                ErrorKind::InvalidStateAction, 
+                String::from("Not all combatants have supplied their initiative.  Cannot begin passes.")
+            ));
         }
 
+        self.initiatives.sort_by(|a, b| b.cmp(a));
+        self.initiative_pass = 1;
+        self.next_init_index = 0;
+        self.current_state = State::InitiativePass;
 
         Ok(())
     }
@@ -310,10 +320,10 @@ impl Game {
 
         if self.initiative_pass > 1 {
             // If the first initiative entry cannot participate on this initiative pass
-            if !self.participate_in_round(self.next_init_index)
+            if !self.participate_in_pass(self.next_init_index)
             {
                 // Find the next that can.
-                self.next_init_index = self.find_next_character();
+                self.next_init_index = self.find_next_participant();
             }
 
             // If the value of self.next_init_index after these two checks is actually > the number of characters participating in combat,
@@ -326,15 +336,18 @@ impl Game {
         Ok(())
     }
 
-    fn participate_in_round(self: &Game, index: usize) -> bool
+    fn participate_in_pass(self: &Game, index: usize) -> bool
     {
         let initiative = self.initiatives.get(index).unwrap();
-        if let Some(char_id) = self.initiative_player_map.get(&initiative)
+        if let Some(char_ids) = self.initiative_player_map.get(&initiative)
         {
-            if let Some(character_data) = self.combatant_data.get(&char_id)
+            for char_id in char_ids 
             {
-                if character_data.turns_per_round >= self.initiative_pass {
-                    return true;
+                if let Some(character_data) = self.combatant_data.get(&char_id)
+                {
+                    if character_data.turns_per_round >= self.initiative_pass {
+                        return true;
+                    }
                 }
             }
         }
@@ -342,12 +355,12 @@ impl Game {
         return false;
     }
 
-    fn find_next_character(self: &Game) -> usize
+    fn find_next_participant(self: &Game) -> usize
     {
         let mut start = self.next_init_index + 1;
         while start < self.initiatives.len()
         {
-            if self.participate_in_round(start)
+            if self.participate_in_pass(start)
             {
                 return start;
             }
@@ -367,11 +380,14 @@ impl Game {
             })
         }
 
-        self.next_init_index = self.find_next_character();
+        self.next_init_index = self.find_next_participant();
 
         if self.next_init_index >= self.initiatives.len()
         {
-            self.advance_initiative_pass()?
+            return Err(GameError::new(
+                ErrorKind::EndOfInitiative,
+                String::from("The end of initiative order has been reached for this pass.  You must advance to the next pass to continue combat.")
+            ));
         }
 
         Ok(())
@@ -384,6 +400,9 @@ impl Game {
         {
             return Err(GameError::new(ErrorKind::InvalidStateAction, String::from(format!("The game is not in the character turn phase.  You cannot take an action."))));
         }
+
+        // Get the current initiative actor.
+        
 
         if let Some(combat_data) = self.combatant_data.get_mut(&actor){
 
@@ -414,18 +433,33 @@ pub struct CharacterCombatData {
     free_actions: usize,
     simple_actions: usize,
     complex_actions: usize,
+    has_resolved: bool,
 
 }
 
 impl CharacterCombatData {
     pub fn new(id: Uuid)->CharacterCombatData {
-        CharacterCombatData { id, turns_per_round: 0, free_actions: 1, simple_actions: 2, complex_actions: 1, actions: HashMap::new() }
+        CharacterCombatData 
+        { 
+            id, 
+            turns_per_round: 0, 
+            free_actions: 1, 
+            simple_actions: 2, 
+            complex_actions: 1, 
+            actions: HashMap::new(),
+            has_resolved: false,
+        }
     }
 
     pub fn reset(self: &mut CharacterCombatData) {
         self.free_actions = 1;
         self.simple_actions = 2;
         self.complex_actions = 1;
+        self.has_resolved = false;
+    }
+
+    pub fn resolve(self: &mut CharacterCombatData) {
+        self.has_resolved = true;
     }
 }
 
@@ -503,6 +537,39 @@ mod tests
         let _ = env_logger::builder().is_test(true).try_init();
     }
 
+    macro_rules! populate {
+        ($game:expr, $char:expr) => {
+            let local_game: &mut Game = $game;
+            let char_id:Uuid = $char.id;
+            local_game.add_cast_member($char);
+            local_game.add_combatant(char_id);
+        };
+        ($game:expr, $char:expr, $($chars:expr),+) => {
+            let local_game: &mut Game = $game;
+            let char_id:Uuid = $char.id;
+            local_game.add_cast_member($char);
+            local_game.add_combatant(char_id);
+            populate!(local_game, $($chars),+);
+            
+        };
+    }
+
+
+    fn build_orc()->Character
+    {
+        Character::new_pc(Metatypes::Orc, String::from("Zorc"))
+    }
+
+    fn build_elf()->Character
+    {
+        Character::new_pc(Metatypes::Elf, String::from("Lef"))
+    }
+
+    fn build_dwarf()->Character
+    {
+        Character::new_npc(Metatypes::Dwarf, String::from("Dorf"))
+    }
+
 
     #[test]
     pub fn build_game()
@@ -569,7 +636,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_begin_combat()
+    pub fn test_initative_transition()
     {
         let lef = Character::new_npc(Metatypes::Elf, String::from("Lef"));
         let lef_id = lef.id;
@@ -588,4 +655,149 @@ mod tests
         assert!(result.is_ok());
         assert_eq!(game.current_state(), String::from("Initiative Rolls"));
     }
+
+    #[test]
+    pub fn test_initiative_transition_fail()
+    {
+        let lef = Character::new_npc(Metatypes::Elf, String::from("Lef"));
+        let lef_id = lef.id;
+
+        let mut game = Game::new();
+
+        game.add_cast_member(lef);
+
+        let result = game.begin_initiative();
+
+        assert!(result.is_err());
+        assert_eq!(game.current_state(), String::from("PreCombat"));
+    }
+
+    #[test]
+    pub fn add_initiative_and_fail()
+    {
+        let lef = Character::new_npc(Metatypes::Elf, String::from("Lef"));
+        let lef_id = lef.id;
+        let mut game = Game::new();
+
+        game.add_cast_member(lef);
+        game.add_combatant(lef_id);
+
+        let result = game.add_initiative(lef_id, 4);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    pub fn add_initative_and_succeed()
+    {
+        init();
+
+        let zorc = build_orc();
+        let zorc_id = zorc.id;
+        let dorf = build_dwarf();
+        let dorf_id = dorf.id;
+
+        let mut game = Game::new();
+        populate!(&mut game, zorc, dorf);
+        game.begin_initiative();
+
+        let result = game.add_initiative(zorc_id, 4);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    pub fn add_two_initatives_and_succeed()
+    {
+        init();
+
+
+        let zorc = build_orc();
+        let zorc_id = zorc.id;
+        let dorf = build_dwarf();
+        let dorf_id = dorf.id;
+
+        
+
+        let mut game = Game::new();
+        populate!(&mut game, zorc, dorf);
+        game.begin_initiative();
+
+        let result = game.add_initiative(zorc_id, 2);
+        assert!(result.is_ok());
+        let result = game.add_initiative(dorf_id, 13);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    pub fn add_init_for_no_character()
+    {
+        init();
+
+        let zorc = build_orc();
+        let mork = build_orc();
+
+        let mut game = Game::new();
+        populate!(&mut game, zorc, mork);
+        game.begin_initiative();
+
+        let result = game.add_initiative(Uuid::new_v4(), 2);
+        assert!(result.is_err());
+    }
+
+
+
+    #[test]
+    pub fn advance_initiative()
+    {
+        init();
+
+        let zorc = build_orc();
+        let zorc_id = zorc.id;
+        let mork = build_orc();
+        let mork_id = mork.id;
+        let dork = build_dwarf();
+        let dork_id = dork.id;
+
+        let mut game = Game::new();
+        populate!(&mut game, zorc, mork, dork);
+
+        game.begin_initiative();
+
+        game.add_initiative(zorc_id, 4);
+        game.add_initiative(mork_id, 8);
+        game.add_initiative(dork_id, 3);
+
+        let result = game.begin_initiative_passes();
+
+        assert_eq!(game.current_state(), String::from("Initiative Pass"));
+        assert!(result.is_ok());
+
+    }
+
+    #[test]
+    pub fn advance_incomplete_initiative()
+    {
+        init();
+
+        let zorc = build_orc();
+        let zorc_id = zorc.id;
+        let melf = build_elf();
+        let dork = build_dwarf();
+        let dork_id = dork.id;
+
+        let mut game = Game::new ();
+        populate!(&mut game, zorc, dork, melf);
+
+        game.begin_initiative();
+        game.add_initiative(zorc_id, 1);
+        game.add_initiative(dork_id, 15);
+
+        let result = game.begin_initiative_passes();
+
+        assert_eq!(game.current_state(), String::from("Initiative Rolls"));
+        assert!(result.is_err());
+    }
+
+
 }
