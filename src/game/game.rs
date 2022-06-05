@@ -15,6 +15,7 @@ pub struct Game {
     
     initiatives: Vec<i8>,
     next_init_index: usize,
+    current_initiative: i8,
     initiative_pass: usize,
     initiative_player_map: HashMap<i8, Vec<Uuid>>,
     combatant_data: HashMap<Uuid, CharacterCombatData>,
@@ -34,6 +35,7 @@ impl Game {
             // Combat specific data
             initiatives: Vec::new(),
             next_init_index: 0,
+            current_initiative: -1,
             initiative_pass: 0,
             initiative_player_map: HashMap::new(),
             participating: Vec::new(),
@@ -298,6 +300,7 @@ impl Game {
         self.initiatives.sort_by(|a, b| b.cmp(a));
         self.initiative_pass = 1;
         self.next_init_index = 0;
+        self.current_initiative = *self.initiatives.get(0).unwrap();
         self.current_state = State::InitiativePass;
 
         Ok(())
@@ -318,19 +321,24 @@ impl Game {
         self.next_init_index = 0;
         self.initiative_pass += 1;
 
-        if self.initiative_pass > 1 {
-            // If the first initiative entry cannot participate on this initiative pass
-            if !self.participate_in_pass(self.next_init_index)
-            {
-                // Find the next that can.
-                self.next_init_index = self.find_next_participant();
-            }
+        // If the first initiative entry cannot participate on this initiative pass
+        if !self.participate_in_pass(self.next_init_index)
+        {
+            // Find the next that can.
+            self.next_init_index = self.find_next_participant();
+        }
 
-            // If the value of self.next_init_index after these two checks is actually > the number of characters participating in combat,
-            // then there are no events that can occur in this round, and the initiative round is over.
-            if self.next_init_index >= self.initiatives.len(){
-                self.current_state = State::PostRound;
-            }
+        // If the value of self.next_init_index after these two checks is actually > the number of characters participating in combat,
+        // then there are no events that can occur in this round, and the initiative round is over.
+        if self.next_init_index >= self.initiatives.len(){
+            self.current_initiative = -1;
+            return Err(GameError::new(
+                ErrorKind::EndOfInitiativePass,
+                String::from("All characters that can act in this pass have acted.")
+            ));
+        }
+        else {
+            self.current_initiative = *(self.initiatives.get(self.next_init_index).unwrap());
         }
 
         Ok(())
@@ -345,7 +353,7 @@ impl Game {
             {
                 if let Some(character_data) = self.combatant_data.get(&char_id)
                 {
-                    if character_data.turns_per_round >= self.initiative_pass {
+                    if character_data.initiative_passes >= self.initiative_pass {
                         return true;
                     }
                 }
@@ -380,6 +388,31 @@ impl Game {
             })
         }
 
+        // Make sure all current characters have signalled they are done
+        if self.current_initiative >= 0
+        {
+            for character in self.initiative_player_map.get(&self.current_initiative).unwrap()
+            {
+                if let Some(char_data) = self.combatant_data.get(character)
+                {
+                    if !char_data.has_resolved
+                    {
+                        return Err(GameError::new(
+                            ErrorKind::UnresolvedCombatant,
+                            String::from(format!("Character ID {} has not yet signalled their turn is complete.", character))
+                        ));
+                    }
+                }
+            }
+        }
+        else {
+            return Err(GameError::new(
+                ErrorKind::UnknownCastId,
+                String::from("Initiative turn appears to have exhausted all eligible characters.")
+            ));
+        }
+        
+
         self.next_init_index = self.find_next_participant();
 
         if self.next_init_index >= self.initiatives.len()
@@ -401,34 +434,58 @@ impl Game {
             return Err(GameError::new(ErrorKind::InvalidStateAction, String::from(format!("The game is not in the character turn phase.  You cannot take an action."))));
         }
 
-        // Get the current initiative actor.
-        
+        // Rules for taking action: 
+        // If it is the current initiative of the actor trying to act, then the actor may attempt to perform any of their actions.
+        // if it is NOT the current initiative of the actor trying to act, they may only take free actions.
 
-        if let Some(combat_data) = self.combatant_data.get_mut(&actor){
-
-            if let Some(remaining) = combat_data.actions.get(&action_type)
-            {
-                if remaining > &0 {
-                    let new = remaining - 1;
-                    combat_data.actions.insert(action_type, new);
-                }else {
-                    return Err(GameError::new
-                    (
-                        ErrorKind::NoFreeAction, 
-                        String::from(format!("Character {} does not have any remaining {:?} actions.", actor, action_type))));
-                }
-            }
+        // So - get the actors for the current initiative out
+        let result = self.initiative_player_map.get_mut(&self.current_initiative);
+        if result.is_none()
+        {
+            return Err(GameError::new(
+                ErrorKind::EndOfInitiative,
+                String::from(format!("The current initiative value {} does not map to any valid combatants.", self.current_initiative))
+            ))
         }
 
+        let current_combatants = result.unwrap();
+        
 
+        if current_combatants.contains(&actor) || action_type == ActionType::FREE
+        {
+            match self.combatant_data.entry(actor)
+            {
+                std::collections::hash_map::Entry::Occupied(mut entry) => 
+                {
+                    let combat_data = entry.get_mut();
+                    let actions = &mut combat_data.actions;
+                    // unwrapping should be safe so long as the methods maintain the presence of all action types as an invariant.
+                    let mut action_count = actions.remove(&action_type).unwrap();
+                    if action_count > 0 { action_count -= 1;}
+                    actions.insert(action_type, action_count);
+                },
+                std::collections::hash_map::Entry::Vacant(_) => 
+                {
+                    return Err(GameError::new(
+                        ErrorKind::UnknownCastId,
+                        String::from(format!("The combat data for combatant {} was not recorded.", actor))
+                    ));
+                },
+            }
+        }
+        
+
+        
         Ok(())
     }
+
+
 
 }
 
 pub struct CharacterCombatData {
     id: Uuid,
-    turns_per_round: usize,
+    initiative_passes: usize,
     actions: HashMap<ActionType, usize>,
     free_actions: usize,
     simple_actions: usize,
@@ -442,7 +499,7 @@ impl CharacterCombatData {
         CharacterCombatData 
         { 
             id, 
-            turns_per_round: 0, 
+            initiative_passes: 0, 
             free_actions: 1, 
             simple_actions: 2, 
             complex_actions: 1, 
@@ -469,7 +526,7 @@ enum State {
     Initiative,
     InitiativePass,
     PostRound,
-    Other
+    Other,
 }
 
 impl State {
@@ -510,10 +567,10 @@ pub enum ErrorKind {
     InvalidStateAction,
     UnknownCastId,
     EndOfInitiative,
-    NoFreeAction,
-    NoSimpleAction,
-    NoComplexAction,
+    EndOfInitiativePass,
+    NoAction,
     GameStateInconsistency,
+    UnresolvedCombatant,
     NoCombatants
 }
 
