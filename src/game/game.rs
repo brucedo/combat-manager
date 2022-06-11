@@ -316,6 +316,9 @@ impl Game {
             })
         }
 
+        // First: we should not normally be able to advance to the next initiative pass if there are still players on the current 
+        // initiative pass.  That is, if the next_init_index 
+
         // start at the zero mark, and then do a quick scan to find the first character who has a turn this initiative round.
         // (Remember: this will always be zero on the first round but may NOT be zero on subsequent ones.)
         self.next_init_index = 0;
@@ -584,6 +587,7 @@ pub enum GameValue {
 #[cfg(test)]
 mod tests
 {
+    use log::debug;
     use uuid::Uuid;
 
     use crate::game::{game::{GameValue, State}, character::{Character, Metatypes}};
@@ -704,8 +708,8 @@ mod tests
         game.add_cast_member(lef);
         game.add_cast_member(zorc);
 
-        game.add_combatant(lef_id);
-        game.add_combatant(zorc_id);
+        assert!(game.add_combatant(lef_id).is_ok());
+        assert!(game.add_combatant(zorc_id).is_ok());
 
         let result = game.begin_initiative();
 
@@ -717,7 +721,6 @@ mod tests
     pub fn test_initiative_transition_fail()
     {
         let lef = Character::new_npc(Metatypes::Elf, String::from("Lef"));
-        let lef_id = lef.id;
 
         let mut game = Game::new();
 
@@ -737,7 +740,7 @@ mod tests
         let mut game = Game::new();
 
         game.add_cast_member(lef);
-        game.add_combatant(lef_id);
+        assert!(game.add_combatant(lef_id).is_ok());
 
         let result = game.add_initiative(lef_id, 4);
 
@@ -752,11 +755,10 @@ mod tests
         let zorc = build_orc();
         let zorc_id = zorc.id;
         let dorf = build_dwarf();
-        let dorf_id = dorf.id;
 
         let mut game = Game::new();
         populate!(&mut game, zorc, dorf);
-        game.begin_initiative();
+        assert!(game.begin_initiative().is_ok());
 
         let result = game.add_initiative(zorc_id, 4);
 
@@ -778,7 +780,7 @@ mod tests
 
         let mut game = Game::new();
         populate!(&mut game, zorc, dorf);
-        game.begin_initiative();
+        assert!(game.begin_initiative().is_ok());
 
         let result = game.add_initiative(zorc_id, 2);
         assert!(result.is_ok());
@@ -796,7 +798,7 @@ mod tests
 
         let mut game = Game::new();
         populate!(&mut game, zorc, mork);
-        game.begin_initiative();
+        assert!(game.begin_initiative().is_ok());
 
         let result = game.add_initiative(Uuid::new_v4(), 2);
         assert!(result.is_err());
@@ -819,11 +821,11 @@ mod tests
         let mut game = Game::new();
         populate!(&mut game, zorc, mork, dork);
 
-        game.begin_initiative();
+        assert!(game.begin_initiative().is_ok());
 
-        game.add_initiative(zorc_id, 4);
-        game.add_initiative(mork_id, 8);
-        game.add_initiative(dork_id, 3);
+        assert!(game.add_initiative(zorc_id, 4).is_ok());
+        assert!(game.add_initiative(mork_id, 8).is_ok());
+        assert!(game.add_initiative(dork_id, 3).is_ok());
 
         let result = game.begin_initiative_passes();
 
@@ -846,14 +848,41 @@ mod tests
         let mut game = Game::new ();
         populate!(&mut game, zorc, dork, melf);
 
-        game.begin_initiative();
-        game.add_initiative(zorc_id, 1);
-        game.add_initiative(dork_id, 15);
+        assert!(game.begin_initiative().is_ok());
+        assert!(game.add_initiative(zorc_id, 1).is_ok());
+        assert!(game.add_initiative(dork_id, 15).is_ok());
 
         let result = game.begin_initiative_passes();
 
         assert_eq!(game.current_state(), String::from("Initiative Rolls"));
         assert!(result.is_err());
+    }
+
+    #[test]
+    pub fn advance_init_pass_unresolved_turns()
+    {
+        init();
+
+        let zorc = build_orc();
+        let zorc_id = zorc.id;
+        let melf = build_elf();
+        let melf_id = melf.id;
+        let dork = build_dwarf();
+        let dork_id = dork.id;
+
+        let mut game = Game::new();
+        populate!(&mut game, zorc, dork, melf);
+
+        assert!(game.begin_initiative().is_ok());
+        assert!(game.add_initiative(zorc_id, 23).is_ok());
+        assert!(game.add_initiative(melf_id, 20).is_ok());
+        assert!(game.add_initiative(dork_id, 33).is_ok());
+        assert!(game.begin_initiative_passes().is_ok());
+        
+        // Attempting to advance to the next initiative pass should result in failure.
+        let result = game.advance_initiative_pass();
+        assert!(result.is_err());
+        debug!("{}", result.unwrap_err().msg);
     }
 
 
