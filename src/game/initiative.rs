@@ -31,7 +31,7 @@ pub enum PassState {
     Ready,
     PassDone,
     AllDone,
-    Next(Uuid),
+    Next((Uuid, i8)),
     UnknownId(Uuid),
 }
 
@@ -141,28 +141,50 @@ impl InitTracker {
     pub fn next(&mut self) -> PassState
     {
         if let Some(initiative) = self.initiatives.pop()
-        {
+        {   // 
             let id = initiative.id;
-            if initiative.in_astral_space && initiative.astral_passes > self.current_pass
-            {
-                self.overflow.push(initiative);
-            }
-            else if initiative.in_matrix && initiative.matrix_passes > self.current_pass
-            {
-                self.overflow.push(initiative);
-            }
-            else if initiative.passes > self.current_pass
+            let init_value = initiative.initiative;
+            if self.has_more_passes(&initiative)
             {
                 self.overflow.push(initiative);
             }
 
-            PassState::Next(id)
+            PassState::Next((id, init_value))
         }
         else 
         {
             PassState::PassDone
         }
         
+    }
+
+    pub fn next_if_match(&mut self, init: i8) -> PassState
+    {
+        if let Some(initiative) = self.initiatives.last()
+        {
+            if initiative.initiative == init
+            {
+                return self.next();
+            }
+            else 
+            {
+                return PassState::PassDone
+            }
+        }
+
+        PassState::PassDone
+    }
+
+    fn has_more_passes(&mut self, initiative: &Initiative) -> bool
+    {
+        if (initiative.in_astral_space && initiative.astral_passes > self.current_pass) ||
+            (initiative.in_matrix && initiative.matrix_passes > self.current_pass) ||
+            (initiative.passes > self.current_pass)
+        {
+            return true;
+        }
+
+        false
     }
 
     pub fn login_matrix(&mut self, id: Uuid) -> PassState
@@ -343,11 +365,11 @@ mod tests
         assert_eq!(PassState::Ready, tracker.begin_new_pass());
 
         tracker.on_next_pass(next_pass, 12, 2, 1, 1);
-        assert_eq!(PassState::Next(first_pass), tracker.next());
+        assert_eq!(PassState::Next((first_pass, 3)), tracker.next());
         assert_eq!(PassState::PassDone, tracker.next());
 
         assert_eq!(PassState::Ready, tracker.begin_new_pass());
-        assert_eq!(PassState::Next(next_pass), tracker.next());
+        assert_eq!(PassState::Next((next_pass, 12)), tracker.next());
     }
 
     #[test]
@@ -363,20 +385,20 @@ mod tests
         assert_eq!(PassState::Ready, tracker.begin_new_pass());
 
         // pass one
-        assert_eq!(PassState::Next(multi_pass), tracker.next());
+        assert_eq!(PassState::Next((multi_pass, 3)), tracker.next());
         // grenade!
         assert_eq!(PassState::AcceptedRequest, tracker.one_shot_next_pass(one_shot, 20));
         assert_eq!(PassState::PassDone, tracker.next());
 
         // pass two
         assert_eq!(PassState::Ready, tracker.begin_new_pass());
-        assert_eq!(PassState::Next(one_shot), tracker.next()); // BANG
-        assert_eq!(PassState::Next(multi_pass), tracker.next());
+        assert_eq!(PassState::Next((one_shot, 20)), tracker.next()); // BANG
+        assert_eq!(PassState::Next((multi_pass, 3)), tracker.next());
         assert_eq!(PassState::PassDone, tracker.next());
 
         // pass three
         assert_eq!(PassState::Ready, tracker.begin_new_pass());
-        assert_eq!(PassState::Next(multi_pass), tracker.next());
+        assert_eq!(PassState::Next((multi_pass, 3)), tracker.next());
         assert_eq!(PassState::PassDone, tracker.next());
 
         // And odne
@@ -560,7 +582,7 @@ mod tests
         while let PassState::Next(id) = tracker.next()
         {
             let comparative_id = ordered_ids.pop().unwrap();
-            assert_eq!(id, comparative_id.1);
+            assert_eq!(id.0, comparative_id.1);
         }
 
         // And confirm that we get PassDone now.
@@ -591,8 +613,8 @@ mod tests
 
         assert_eq!(PassState::Ready, tracker.begin_new_pass());
 
-        assert_eq!(PassState::Next(first), tracker.next());
-        assert_eq!(PassState::Next(second), tracker.next());
+        assert_eq!(PassState::Next((first, 23)), tracker.next());
+        assert_eq!(PassState::Next((second, 12)), tracker.next());
         assert_eq!(PassState::PassDone, tracker.next());
 
         assert_eq!(PassState::Ready, tracker.begin_new_pass());
@@ -613,7 +635,7 @@ mod tests
         tracker.add_new_event(one_shot, 22, 1, 1, 1);
 
         assert_eq!(PassState::Ready, tracker.begin_new_pass());
-        assert_eq!(PassState::Next(one_shot), tracker.next());
+        assert_eq!(PassState::Next((one_shot, 22)), tracker.next());
         assert_eq!(PassState::PassDone, tracker.next());
         assert_eq!(PassState::AllDone, tracker.begin_new_pass());
 
@@ -622,7 +644,7 @@ mod tests
         tracker.add_new_event(one_shot, 22, 2, 1, 1);
 
         assert_eq!(PassState::Ready, tracker.begin_new_pass());
-        assert_eq!(PassState::Next(one_shot), tracker.next());
+        assert_eq!(PassState::Next((one_shot, 22)), tracker.next());
         assert_eq!(PassState::PassDone, tracker.next());
 
         // if the reset fails, then the pass tracker won't restart.  Therefore the new event will be shortchanged - 
@@ -746,8 +768,8 @@ mod tests
 
         assert_eq!(PassState::Ready, tracker.begin_new_pass());
 
-        assert_eq!(PassState::Next(matrix_id), tracker.next());
-        assert_eq!(PassState::Next(non_matrix_id), tracker.next());
+        assert_eq!(PassState::Next((matrix_id, 22)), tracker.next());
+        assert_eq!(PassState::Next((non_matrix_id, 16)), tracker.next());
         assert_eq!(PassState::PassDone, tracker.next());
 
         assert_eq!(PassState::AllDone, tracker.begin_new_pass());
@@ -761,18 +783,18 @@ mod tests
 
         // pass one
         assert_eq!(PassState::Ready, tracker.begin_new_pass());
-        assert_eq!(PassState::Next(matrix_id), tracker.next());
-        assert_eq!(PassState::Next(non_matrix_id), tracker.next());
+        assert_eq!(PassState::Next((matrix_id, 22)), tracker.next());
+        assert_eq!(PassState::Next((non_matrix_id, 16)), tracker.next());
         assert_eq!(PassState::PassDone, tracker.next());
 
         // pass two
         assert_eq!(PassState::Ready, tracker.begin_new_pass());
-        assert_eq!(PassState::Next(matrix_id), tracker.next());
+        assert_eq!(PassState::Next((matrix_id, 22)), tracker.next());
         assert_eq!(PassState::PassDone, tracker.next());
 
         // pass three
         assert_eq!(PassState::Ready, tracker.begin_new_pass());
-        assert_eq!(PassState::Next(matrix_id), tracker.next());
+        assert_eq!(PassState::Next((matrix_id, 22)), tracker.next());
         assert_eq!(PassState::PassDone, tracker.next());
 
         // and pass four should end it.
@@ -797,8 +819,8 @@ mod tests
 
         assert_eq!(PassState::Ready, tracker.begin_new_pass());
 
-        assert_eq!(PassState::Next(non_astral_form), tracker.next());
-        assert_eq!(PassState::Next(astral_form), tracker.next());
+        assert_eq!(PassState::Next((non_astral_form, 22)), tracker.next());
+        assert_eq!(PassState::Next((astral_form, 16)), tracker.next());
         assert_eq!(PassState::PassDone, tracker.next());
 
         assert_eq!(PassState::AllDone, tracker.begin_new_pass());
@@ -812,23 +834,23 @@ mod tests
 
         // pass one
         assert_eq!(PassState::Ready, tracker.begin_new_pass());
-        assert_eq!(PassState::Next(non_astral_form), tracker.next());
-        assert_eq!(PassState::Next(astral_form), tracker.next());
+        assert_eq!(PassState::Next((non_astral_form, 22)), tracker.next());
+        assert_eq!(PassState::Next((astral_form, 16)), tracker.next());
         assert_eq!(PassState::PassDone, tracker.next());
 
         // pass two
         assert_eq!(PassState::Ready, tracker.begin_new_pass());
-        assert_eq!(PassState::Next(astral_form), tracker.next());
+        assert_eq!(PassState::Next((astral_form, 16)), tracker.next());
         assert_eq!(PassState::PassDone, tracker.next());
 
         // pass three
         assert_eq!(PassState::Ready, tracker.begin_new_pass());
-        assert_eq!(PassState::Next(astral_form), tracker.next());
+        assert_eq!(PassState::Next((astral_form, 16)), tracker.next());
         assert_eq!(PassState::PassDone, tracker.next());
 
         // pass four
         assert_eq!(PassState::Ready, tracker.begin_new_pass());
-        assert_eq!(PassState::Next(astral_form), tracker.next());
+        assert_eq!(PassState::Next((astral_form, 16)), tracker.next());
         assert_eq!(PassState::PassDone, tracker.next());
 
         // and done

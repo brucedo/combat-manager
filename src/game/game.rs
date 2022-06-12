@@ -3,8 +3,29 @@ use std::collections::HashMap;
 use log::debug;
 use uuid::Uuid;
 
-use super::{character::Character};
+use super::{character::Character, initiative::{InitTracker, PassState}};
 
+// The game struct and methods coordinate actions and activity through combat.  The game struct is responsible for ensuring that
+// initiative passes flow smoothly (albeit through the tracker), for keeping straight what actions a character can perform on any 
+// given turn, and (eventually) what actual specific things they can do given their current state and inventory.
+
+// Example:  The game object should be able to tell a character that, on their turn, they have 2 simple actions, one complex action,
+// and a free action, or that they have a free action when it is not their turn.  If the player takes one simple action, that should 
+// get marked down; if they take one complex action, then all of their simple actions and complex actions disappear for the rest of the pass.
+//
+// Example:  A character has a pistol readied.  The game object should be able to look at the character sheet, identify that the pistol is readied,
+// and add appropriate pistol-actions that can be taken with either the simple or complex action.
+//
+// Example:  The character has just fired three rounds from a rifle.  Their rifle's ammunition counter should decrease by 3; if they attempt
+// to fire another 3 round burst and only have one round left in the gun, the reduced damage rules should apply to that burst.
+
+// State flow:  Begin Combat -> Load combatants -> Begin Combat Round -> Read Initiatives -> Begin Pass -> Check for more passes - End Combat Round
+//                                                        ^                                       ^_____________________|                 |
+//                                                        |_______________________________________________________________________________|
+// Technically end combat would have a check for more rounds step.  But this is the basic flow - start a combat, load the combatants into 
+// context (during which things like weapon state, skills, abilities etc. are scanned for modifiers), and then start passing through combat
+// rounds.  Initiative tracking is now handled by the InitiativeTracker, so Game merely needs to call next() until the return type indicates
+// we've hit the end.
 
 pub struct Game {
     current_state: State,
@@ -13,9 +34,11 @@ pub struct Game {
 
     // Combat data
     
-    initiatives: Vec<i8>,
-    next_init_index: usize,
+    init_tracker: InitTracker,
+    current_turn_id: Vec<Uuid>,
+    next_id: Vec<Uuid>,
     current_initiative: i8,
+    next_initiative: i8,
     initiative_pass: usize,
     initiative_player_map: HashMap<i8, Vec<Uuid>>,
     combatant_data: HashMap<Uuid, CharacterCombatData>,
@@ -33,13 +56,15 @@ impl Game {
             cast: HashMap::new(),
 
             // Combat specific data
-            initiatives: Vec::new(),
-            next_init_index: 0,
-            current_initiative: -1,
+            init_tracker: InitTracker::new(None),
+            current_turn_id: Vec::new(),
+            next_id: Vec::new(),
+            current_initiative: 0, 
+            next_initiative: 0,
             initiative_pass: 0,
             initiative_player_map: HashMap::new(),
             participating: Vec::new(),
-            combatant_data: HashMap::new()
+            combatant_data: HashMap::new(),
         }
     }
 
@@ -74,36 +99,9 @@ impl Game {
         if self.current_state != State::InitiativePass
         {
             return Option::None;
-            // return Err(GameError::new
-            // (
-            //     ErrorKind::InvalidStateAction, 
-            //     String::from("Not in an initiative pass phase - cannot identify who should be acting."
-            // )));
         }
 
-        if let Some(initiative) = self.initiatives.get(self.next_init_index)
-        {
-            if let Some(char_id) = self.initiative_player_map.get(initiative)
-            {
-                return Some((*char_id).clone());
-            }
-            // else
-            // {
-            //     return Err(GameError::new
-            //     (
-            //         ErrorKind::GameStateInconsistency,
-            //         String::from("There is an initiative recorded for no matching character ID.  The game is in an inconsistent state.")
-            //     ));
-            // }
-        }
-        // else {
-        //     return Err(GameError::new
-        //     (
-        //         ErrorKind::GameStateInconsistency, 
-        //         String::from("The Game object has entered into an inconsistent state.  Clearly the developer sucks.  You should go complain at them.")
-        //     ));
-        // }
-        return None;
+        Option::Some(self.current_turn_id.clone())
 
     }
 
@@ -112,47 +110,16 @@ impl Game {
         if self.current_state != State::InitiativePass
         {
             return None;
-            // return Err(GameError::new
-            // (
-            //     ErrorKind::InvalidStateAction, 
-            //     String::from("Not in an initiative pass phase - cannot identify who should be acting next."
-            // )));
         }
 
-        let next = self.find_next_participant();
-        if next >= self.initiatives.len()
+        if self.next_id.len() == 0
         {
             return None;
-            // return Err(GameError::new
-            // (
-            //     ErrorKind::EndOfInitiative,
-            //     String::from("No further players will be acting until the next Combat Round.")
-            // ));
         }
-
-        if let Some(initiative) = self.initiatives.get(next)
+        else
         {
-            if let Some(char_id) = self.initiative_player_map.get(initiative)
-            {
-                return Some((*char_id).clone());
-            }
-            // else {
-            //     return Err(GameError::new
-            //     (
-            //         ErrorKind::GameStateInconsistency,
-            //         String::from("The Game object has an initiative that does not map to a character.")
-            //     ));
-            // }
+            return Some(self.next_id.clone());
         }
-        // else
-        // {
-        //     return Err(GameError::new
-        //     (
-        //         ErrorKind::GameStateInconsistency,
-        //         String::from("The Game object found an initiative index but now cannot find the initiative.  This probably should not happen.")
-        //     ));
-        // }
-        return None;
     }
 
     pub fn get_combatants(self: &Game) -> Vec<Uuid>
@@ -167,6 +134,8 @@ impl Game {
     pub fn end_combat(self: &mut Game)
     {
         self.current_state = State::PreCombat;
+        self.current_turn_id.clear();
+        self.next_id.clear();
         self.initiative_player_map.clear();
         self.participating.clear();
     }
@@ -189,6 +158,7 @@ impl Game {
         Ok(())
     }
 
+    // Placeholder for a more useful character sheet scan
     fn fill_combatant_data(self: &mut Game, combatant: Uuid, data: &mut CharacterCombatData)
     {
         data.actions.insert(ActionType::FREE, 1);
@@ -234,7 +204,7 @@ impl Game {
         Ok(())
     }
 
-    pub fn begin_initiative(self: &mut Game) -> Result<(), GameError>
+    pub fn begin_initiative_roll(self: &mut Game) -> Result<(), GameError>
     {
         debug!("Starting initiative.");
         if self.current_state != State::PreCombat && self.current_state != State::InitiativePass
@@ -260,7 +230,7 @@ impl Game {
         Ok(())
     }
 
-    pub fn add_initiative(self: &mut Game, character: Uuid, initiative: i8) -> Result<(), GameError>
+    pub fn add_initiative(self: &mut Game, character_id: Uuid, initiative: i8) -> Result<(), GameError>
     {
         if self.current_state != State::Initiative
         {
@@ -270,18 +240,23 @@ impl Game {
             });
         }
 
-        if self.combatant_data.contains_key(&character)
+        // TODO: scan the ID'd character to 
+        if let Some(combat_data) = self.combatant_data.get_mut(&character_id)
         {
-            self.initiatives.push(initiative);
-            let characters = self.initiative_player_map.entry(initiative).or_insert(Vec::new());
-            characters.push(character);
+            self.init_tracker.add_new_event
+            (
+                character_id, 
+                initiative, 
+                combat_data.initiative_passes, 
+                combat_data.astral_passes, 
+                combat_data.matrix_passes
+            );
+
+            combat_data.declared_initiative = true;
         }
         else
         {
-            return Err(GameError{
-                kind: ErrorKind::UnknownCastId,
-                msg: format!("The character referenced by UUID {} does not exist.", character)
-            });
+            return Err(GameError::new(ErrorKind::NoCombatants, String::from(format!("The id {} does not match any registered combatant.", character_id))));
         }
 
         Ok(())
@@ -289,19 +264,62 @@ impl Game {
 
     pub fn begin_initiative_passes(self: &mut Game) -> Result<(), GameError>
     {
-        if self.initiatives.len() != self.combatant_data.len()
+        for combatant in self.combatant_data.values()
         {
-            return Err(GameError::new(
-                ErrorKind::InvalidStateAction, 
-                String::from("Not all combatants have supplied their initiative.  Cannot begin passes.")
-            ));
+            if !combatant.declared_initiative
+            {
+                return Err(GameError::new(
+                    ErrorKind::InvalidStateAction, 
+                    String::from("Not all combatants have supplied their initiative.  Cannot begin passes.")
+                ));
+            }
         }
 
-        self.initiatives.sort_by(|a, b| b.cmp(a));
-        self.initiative_pass = 1;
-        self.next_init_index = 0;
-        self.current_initiative = *self.initiatives.get(0).unwrap();
         self.current_state = State::InitiativePass;
+
+        return self.initialize_initiatives();
+    }
+
+    pub fn initialize_initiatives(&mut self) -> Result<(), GameError>
+    {
+        match self.init_tracker.next()
+        {
+            PassState::PassDone => {
+                return Err(GameError::new(
+                    ErrorKind::NoCombatants, 
+                    String::from("No more initiative passes to be processed.")
+                ))
+            },
+            PassState::Next(top_init) => {
+                self.current_initiative = top_init.1;
+                self.current_turn_id.push(top_init.0);
+
+                while let PassState::Next(same_turn) = self.init_tracker.next_if_match(self.current_initiative)
+                {
+                    self.current_turn_id.push(same_turn.0);
+                }
+            },
+            _ => {unreachable!()}
+        }
+
+        // And then load the on-deck slot as well.
+        match self.init_tracker.next()
+        {
+            PassState::PassDone => {
+                self.next_id.clear();
+            },
+            PassState::Next(top_init) => {
+                self.next_initiative = top_init.1;
+                self.next_id.push(top_init.0);
+
+                while let PassState::Next(same_initiative) = self.init_tracker.next_if_match(self.next_initiative)
+                {
+                    self.next_id.push(top_init.0);
+                }
+                
+            },
+            _ => {unreachable!()}
+        }
 
         Ok(())
     }
@@ -312,73 +330,35 @@ impl Game {
         {
             return Err(GameError{
                 kind: ErrorKind::InvalidStateAction,
-                msg: String::from(format!("The game is not in the character turn phase.  You cannot begin an initiative turn."))
+                msg: String::from("The game is not in the character turn phase.  You cannot begin an initiative turn.")
             })
         }
 
-        // First: we should not normally be able to advance to the next initiative pass if there are still players on the current 
-        // initiative pass.  That is, if the next_init_index 
-
-        // start at the zero mark, and then do a quick scan to find the first character who has a turn this initiative round.
-        // (Remember: this will always be zero on the first round but may NOT be zero on subsequent ones.)
-        self.next_init_index = 0;
-        self.initiative_pass += 1;
-
-        // If the first initiative entry cannot participate on this initiative pass
-        if !self.participate_in_pass(self.next_init_index)
+        if self.current_turn_id.len() > 0
         {
-            // Find the next that can.
-            self.next_init_index = self.find_next_participant();
-        }
-
-        // If the value of self.next_init_index after these two checks is actually > the number of characters participating in combat,
-        // then there are no events that can occur in this round, and the initiative round is over.
-        if self.next_init_index >= self.initiatives.len(){
-            self.current_initiative = -1;
-            return Err(GameError::new(
-                ErrorKind::EndOfInitiativePass,
-                String::from("All characters that can act in this pass have acted.")
+            return Err(GameError::new
+            (
+                ErrorKind::UnresolvedCombatant, 
+                String::from("There is still at least one initiative turn to process.  Advance the initiative to empty first.")
             ));
         }
-        else {
-            self.current_initiative = *(self.initiatives.get(self.next_init_index).unwrap());
-        }
 
-        Ok(())
-    }
-
-    fn participate_in_pass(self: &Game, index: usize) -> bool
-    {
-        let initiative = self.initiatives.get(index).unwrap();
-        if let Some(char_ids) = self.initiative_player_map.get(&initiative)
+        match self.init_tracker.begin_new_pass()
         {
-            for char_id in char_ids 
+            PassState::Ready => 
             {
-                if let Some(character_data) = self.combatant_data.get(&char_id)
-                {
-                    if character_data.initiative_passes >= self.initiative_pass {
-                        return true;
-                    }
-                }
-            }
+                return self.initialize_initiatives();
+            },
+            PassState::AllDone =>
+            {
+                return Err(GameError::new(
+                    ErrorKind::EndOfInitiativePass,
+                    String::from("All characters that can act in this pass have acted.")
+                ));
+            },
+            _ => {unreachable!()}
         }
 
-        return false;
-    }
-
-    fn find_next_participant(self: &Game) -> usize
-    {
-        let mut start = self.next_init_index + 1;
-        while start < self.initiatives.len()
-        {
-            if self.participate_in_pass(start)
-            {
-                return start;
-            }
-            start += 1;
-        }
-
-        return start;
     }
 
     pub fn advance_initiative(self: &mut Game) -> Result<(), GameError>
@@ -392,41 +372,49 @@ impl Game {
         }
 
         // Make sure all current characters have signalled they are done
-        if self.current_initiative >= 0
+        if self.unresolved_turn()
         {
-            for character in self.initiative_player_map.get(&self.current_initiative).unwrap()
+            return Err(GameError::new(
+                ErrorKind::UnresolvedCombatant,
+                String::from("Some character has not resolved their turn yet.")
+            ));
+        }
+
+        // no unready players.  Eject the current set of characters and initiative, advance the on-deck set...
+        self.current_initiative = self.next_initiative;
+        self.current_turn_id.clear();
+
+        // li'l rotate
+        std::mem::swap(&mut self.current_turn_id, &mut self.next_id);
+
+        // and load the next on-deck set.
+        if let PassState::Next(on_deck) = self.init_tracker.next()
+        {
+            self.next_initiative = on_deck.1;
+            self.next_id.push(on_deck.0);
+            while let PassState::Next(ties) = self.init_tracker.next_if_match(self.next_initiative)
             {
-                if let Some(char_data) = self.combatant_data.get(character)
-                {
-                    if !char_data.has_resolved
-                    {
-                        return Err(GameError::new(
-                            ErrorKind::UnresolvedCombatant,
-                            String::from(format!("Character ID {} has not yet signalled their turn is complete.", character))
-                        ));
-                    }
-                }
+                self.next_id.push(on_deck.0);
             }
-        }
-        else {
-            return Err(GameError::new(
-                ErrorKind::UnknownCastId,
-                String::from("Initiative turn appears to have exhausted all eligible characters.")
-            ));
-        }
-        
-
-        self.next_init_index = self.find_next_participant();
-
-        if self.next_init_index >= self.initiatives.len()
-        {
-            return Err(GameError::new(
-                ErrorKind::EndOfInitiative,
-                String::from("The end of initiative order has been reached for this pass.  You must advance to the next pass to continue combat.")
-            ));
         }
 
         Ok(())
+    }
+
+    fn unresolved_turn(&mut self) -> bool
+    {
+        for id in &self.current_turn_id
+        {
+            if let Some(combat_data) = self.combatant_data.get(&id)
+            {
+                if !combat_data.declared_initiative
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 
     pub fn take_action(self: &mut Game, actor: Uuid, action_type: ActionType) -> Result<(), GameError>
@@ -488,7 +476,10 @@ impl Game {
 
 pub struct CharacterCombatData {
     id: Uuid,
+    declared_initiative: bool,
     initiative_passes: usize,
+    astral_passes: usize,
+    matrix_passes: usize,
     actions: HashMap<ActionType, usize>,
     free_actions: usize,
     simple_actions: usize,
@@ -502,7 +493,10 @@ impl CharacterCombatData {
         CharacterCombatData 
         { 
             id, 
+            declared_initiative: false,
             initiative_passes: 0, 
+            astral_passes: 3,
+            matrix_passes: 3,
             free_actions: 1, 
             simple_actions: 2, 
             complex_actions: 1, 
@@ -711,7 +705,7 @@ mod tests
         assert!(game.add_combatant(lef_id).is_ok());
         assert!(game.add_combatant(zorc_id).is_ok());
 
-        let result = game.begin_initiative();
+        let result = game.begin_initiative_roll();
 
         assert!(result.is_ok());
         assert_eq!(game.current_state(), String::from("Initiative Rolls"));
@@ -726,7 +720,7 @@ mod tests
 
         game.add_cast_member(lef);
 
-        let result = game.begin_initiative();
+        let result = game.begin_initiative_roll();
 
         assert!(result.is_err());
         assert_eq!(game.current_state(), String::from("PreCombat"));
@@ -758,7 +752,7 @@ mod tests
 
         let mut game = Game::new();
         populate!(&mut game, zorc, dorf);
-        assert!(game.begin_initiative().is_ok());
+        assert!(game.begin_initiative_roll().is_ok());
 
         let result = game.add_initiative(zorc_id, 4);
 
@@ -780,7 +774,7 @@ mod tests
 
         let mut game = Game::new();
         populate!(&mut game, zorc, dorf);
-        assert!(game.begin_initiative().is_ok());
+        assert!(game.begin_initiative_roll().is_ok());
 
         let result = game.add_initiative(zorc_id, 2);
         assert!(result.is_ok());
@@ -798,7 +792,7 @@ mod tests
 
         let mut game = Game::new();
         populate!(&mut game, zorc, mork);
-        assert!(game.begin_initiative().is_ok());
+        assert!(game.begin_initiative_roll().is_ok());
 
         let result = game.add_initiative(Uuid::new_v4(), 2);
         assert!(result.is_err());
@@ -821,7 +815,7 @@ mod tests
         let mut game = Game::new();
         populate!(&mut game, zorc, mork, dork);
 
-        assert!(game.begin_initiative().is_ok());
+        assert!(game.begin_initiative_roll().is_ok());
 
         assert!(game.add_initiative(zorc_id, 4).is_ok());
         assert!(game.add_initiative(mork_id, 8).is_ok());
@@ -848,7 +842,7 @@ mod tests
         let mut game = Game::new ();
         populate!(&mut game, zorc, dork, melf);
 
-        assert!(game.begin_initiative().is_ok());
+        assert!(game.begin_initiative_roll().is_ok());
         assert!(game.add_initiative(zorc_id, 1).is_ok());
         assert!(game.add_initiative(dork_id, 15).is_ok());
 
@@ -873,7 +867,7 @@ mod tests
         let mut game = Game::new();
         populate!(&mut game, zorc, dork, melf);
 
-        assert!(game.begin_initiative().is_ok());
+        assert!(game.begin_initiative_roll().is_ok());
         assert!(game.add_initiative(zorc_id, 23).is_ok());
         assert!(game.add_initiative(melf_id, 20).is_ok());
         assert!(game.add_initiative(dork_id, 33).is_ok());
