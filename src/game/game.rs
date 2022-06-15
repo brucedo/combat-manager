@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, hash_map::Entry};
 
 use log::debug;
 use uuid::Uuid;
@@ -40,9 +40,8 @@ pub struct Game {
     current_initiative: i8,
     next_initiative: i8,
     initiative_pass: usize,
-    initiative_player_map: HashMap<i8, Vec<Uuid>>,
+    // initiative_player_map: HashMap<i8, Vec<Uuid>>,
     combatant_data: HashMap<Uuid, CharacterCombatData>,
-    participating: Vec<Uuid>
     
 }
 
@@ -62,8 +61,7 @@ impl Game {
             current_initiative: 0, 
             next_initiative: 0,
             initiative_pass: 0,
-            initiative_player_map: HashMap::new(),
-            participating: Vec::new(),
+            // initiative_player_map: HashMap::new(),
             combatant_data: HashMap::new(),
         }
     }
@@ -101,7 +99,28 @@ impl Game {
             return Option::None;
         }
 
-        Option::Some(self.current_turn_id.clone())
+        let mut blockers = Vec::<Uuid>::new();
+        blockers.reserve(self.current_turn_id.len());
+
+        for uuid in &self.current_turn_id
+        {
+            match self.combatant_data.entry(*uuid) {
+                std::collections::hash_map::Entry::Occupied(entry) => {
+                    if !entry.get().has_resolved
+                    {
+                        blockers.push(*uuid);
+                    }
+                },
+                std::collections::hash_map::Entry::Vacant(_) => {unreachable!()},
+            }
+        }
+
+        if blockers.len() > 0
+        {
+            return Option::Some(blockers);
+        }
+        
+        Option::None
 
     }
 
@@ -124,7 +143,15 @@ impl Game {
 
     pub fn get_combatants(self: &Game) -> Vec<Uuid>
     {
-        self.participating.clone()
+        let mut combatants = Vec::<Uuid>::new();
+        combatants.reserve(self.combatant_data.keys().len());
+
+        for uuid in self.combatant_data.keys()
+        {
+            combatants.push(*uuid);
+        }
+        
+        return combatants;
     }
 
 
@@ -136,8 +163,7 @@ impl Game {
         self.current_state = State::PreCombat;
         self.current_turn_id.clear();
         self.next_id.clear();
-        self.initiative_player_map.clear();
-        self.participating.clear();
+        // self.initiative_player_map.clear();
     }
 
     pub fn add_combatant(self: &mut Game, combatant: Uuid) -> Result<(), GameError>
@@ -149,21 +175,12 @@ impl Game {
                 ErrorKind::UnknownCastId, String::from(format!("ID {} does not match against any ID in the cast list.", combatant))
             ));
         }
-        let mut combatant_data = CharacterCombatData::new(combatant);
+        let combatant_data = CharacterCombatData::new(combatant);
 
         // TODO: Look up character and review their gear, augs etc. to fill in turns_per_round and/or update any other fields
-        self.fill_combatant_data(combatant, &mut combatant_data);
         self.combatant_data.insert(combatant, combatant_data);
 
         Ok(())
-    }
-
-    // Placeholder for a more useful character sheet scan
-    fn fill_combatant_data(self: &mut Game, combatant: Uuid, data: &mut CharacterCombatData)
-    {
-        data.actions.insert(ActionType::FREE, 1);
-        data.actions.insert(ActionType::COMPLEX, 1);
-        data.actions.insert(ActionType::SIMPLE, 2);
     }
 
     pub fn add_combatants(self: &mut Game, mut involved: Vec<Uuid>) -> Result<(), GameError>
@@ -183,8 +200,7 @@ impl Game {
         {
             if self.cast.contains_key(&id)
             {
-                let mut combatant_data = CharacterCombatData::new(id);
-                self.fill_combatant_data(id, &mut combatant_data);
+                let combatant_data = CharacterCombatData::new(id);
                 self.combatant_data.insert(id, combatant_data);
             }
             else
@@ -409,12 +425,12 @@ impl Game {
             {
                 if !combat_data.declared_initiative
                 {
-                    return false;
+                    return true;
                 }
             }
         }
 
-        return true;
+        return false;
     }
 
     pub fn take_action(self: &mut Game, actor: Uuid, action_type: ActionType) -> Result<(), GameError>
@@ -430,8 +446,8 @@ impl Game {
         // if it is NOT the current initiative of the actor trying to act, they may only take free actions.
 
         // So - get the actors for the current initiative out
-        let result = self.initiative_player_map.get_mut(&self.current_initiative);
-        if result.is_none()
+        // let result = self.initiative_player_map.get_mut(&self.current_initiative);
+        if !self.combatant_data.contains_key(&actor)
         {
             return Err(GameError::new(
                 ErrorKind::EndOfInitiative,
@@ -439,23 +455,68 @@ impl Game {
             ))
         }
 
-        let current_combatants = result.unwrap();
+        // let current_combatants = result.unwrap();
         
 
-        if current_combatants.contains(&actor) || action_type == ActionType::FREE
+        if self.current_turn_id.contains(&actor) || action_type == ActionType::Free
         {
             match self.combatant_data.entry(actor)
             {
-                std::collections::hash_map::Entry::Occupied(mut entry) => 
+                Entry::Occupied(mut entry) => 
                 {
                     let combat_data = entry.get_mut();
-                    let actions = &mut combat_data.actions;
-                    // unwrapping should be safe so long as the methods maintain the presence of all action types as an invariant.
-                    let mut action_count = actions.remove(&action_type).unwrap();
-                    if action_count > 0 { action_count -= 1;}
-                    actions.insert(action_type, action_count);
+
+                    match action_type
+                    {
+                        ActionType::Free => {
+                            if combat_data.free_actions > 0
+                            {
+                                combat_data.free_actions -= 1;
+                            }
+                            else {
+                                return Err(GameError::new
+                                (
+                                    ErrorKind::NoAction, 
+                                    String::from("You have already used all of your free actions for this turn.")
+                                ));
+                            }
+                        },
+                        ActionType::Simple => {
+                            if combat_data.simple_actions > 0
+                            {
+                                combat_data.simple_actions -= 1;
+                                if combat_data.simple_actions == 0
+                                {
+                                    combat_data.has_resolved = true;
+                                }
+                            }
+                            else {
+                                return Err(GameError::new
+                                (
+                                    ErrorKind::NoAction, 
+                                    String::from("You have already used all of your simple actions for this turn.")
+                                ));
+                            }
+                        },
+                        ActionType::Complex => {
+                            if combat_data.complex_actions > 0
+                            {
+                                combat_data.complex_actions -= 1;
+                                combat_data.has_resolved = true;
+                            }
+                            else {
+                                return Err(GameError::new
+                                (
+                                    ErrorKind::NoAction, 
+                                    String::from("You have already used all of your complex actions for this turn.")
+                                ));
+                            }
+                        },
+                    }
+
+                    
                 },
-                std::collections::hash_map::Entry::Vacant(_) => 
+                Entry::Vacant(_) => 
                 {
                     return Err(GameError::new(
                         ErrorKind::UnknownCastId,
@@ -480,7 +541,7 @@ pub struct CharacterCombatData {
     initiative_passes: usize,
     astral_passes: usize,
     matrix_passes: usize,
-    actions: HashMap<ActionType, usize>,
+    // actions: HashMap<ActionType, usize>,
     free_actions: usize,
     simple_actions: usize,
     complex_actions: usize,
@@ -500,7 +561,7 @@ impl CharacterCombatData {
             free_actions: 1, 
             simple_actions: 2, 
             complex_actions: 1, 
-            actions: HashMap::new(),
+            // actions: HashMap::new(),
             has_resolved: false,
         }
     }
@@ -541,9 +602,9 @@ impl State {
 
 #[derive(Eq, Hash, PartialEq, Debug)]
 pub enum ActionType {
-    FREE,
-    SIMPLE,
-    COMPLEX
+    Free = 0,
+    Simple = 1,
+    Complex = 2
 }
 
 #[derive(Debug)]
@@ -584,7 +645,7 @@ mod tests
     use log::debug;
     use uuid::Uuid;
 
-    use crate::game::{game::{GameValue, State}, character::{Character, Metatypes}};
+    use crate::game::{game::{GameValue, State, ActionType}, character::{Character, Metatypes}};
 
     use super::Game;
 
@@ -659,6 +720,138 @@ mod tests
         game.add_cast_member(cast_member);
         game.retire_cast_member(id);
         assert_eq!(game.cast_size(), 0);
+    }
+
+    #[test]
+    pub fn test_waiting_for()
+    {
+        let mut game = Game::new();
+        let dorf = build_dwarf();
+        let dorf_id = dorf.id;
+        let mork = build_orc();
+        let mork_id = mork.id;
+        let belf = build_elf();
+        let belf_id = belf.id;
+
+        populate!(&mut game, dorf, mork, belf);
+
+        assert!(game.begin_initiative_roll().is_ok());
+        assert!(game.add_initiative(dorf_id, 9).is_ok());
+        assert!(game.add_initiative(mork_id, 12).is_ok());
+        assert!(game.add_initiative(belf_id, 12).is_ok());
+
+        assert!(game.begin_initiative_passes().is_ok());
+
+        assert!(game.take_action(mork_id, ActionType::Complex).is_ok());
+
+        let blockers_option = game.waiting_for();
+        assert_ne!(blockers_option, None);
+        let blockers = blockers_option.unwrap();
+        assert_eq!(blockers.len(), 1);
+        let blocking_id = *blockers.get(0).unwrap();
+        assert_eq!(blocking_id, belf_id);
+    }
+
+    #[test]
+    pub fn test_waiting_for_no_one()
+    {
+        let mut game = Game::new();
+        let dorf = build_dwarf();
+        let dorf_id = dorf.id;
+        let mork = build_orc();
+        let mork_id = mork.id;
+        let belf = build_elf();
+        let belf_id = belf.id;
+
+        populate!(&mut game, dorf, mork, belf);
+
+        assert!(game.begin_initiative_roll().is_ok());
+        assert!(game.add_initiative(dorf_id, 9).is_ok());
+        assert!(game.add_initiative(mork_id, 12).is_ok());
+        assert!(game.add_initiative(belf_id, 12).is_ok());
+
+        assert!(game.begin_initiative_passes().is_ok());
+
+        assert!(game.take_action(mork_id, ActionType::Complex).is_ok());
+        assert!(game.take_action(belf_id, ActionType::Complex).is_ok());
+
+        assert_eq!(game.waiting_for(), None);
+    }
+
+    #[test]
+    pub fn test_on_deck()
+    {
+        let mut game = Game::new();
+        let dorf = build_dwarf();
+        let dorf_id = dorf.id;
+        let mork = build_orc();
+        let mork_id = mork.id;
+        let belf = build_elf();
+        let belf_id = belf.id;
+
+        populate!(&mut game, dorf, mork, belf);
+
+        assert!(game.begin_initiative_roll().is_ok());
+        assert!(game.add_initiative(dorf_id, 9).is_ok());
+        assert!(game.add_initiative(mork_id, 12).is_ok());
+        assert!(game.add_initiative(belf_id, 12).is_ok());
+
+        assert!(game.begin_initiative_passes().is_ok());
+
+        let option = game.on_deck();
+        assert_ne!(None, option);
+        let on_deck = option.unwrap();
+        assert_eq!(1, on_deck.len());
+        assert!(on_deck.contains(&dorf_id));
+    }
+
+    #[test]
+    pub fn test_on_deck_wrong_state()
+    {
+        let mut game = Game::new();
+        let dorf = build_dwarf();
+        let dorf_id = dorf.id;
+        let mork = build_orc();
+        let mork_id = mork.id;
+        let belf = build_elf();
+        let belf_id = belf.id;
+
+        populate!(&mut game, dorf, mork, belf);
+
+        assert!(game.begin_initiative_roll().is_ok());
+        assert!(game.add_initiative(dorf_id, 9).is_ok());
+        assert!(game.add_initiative(mork_id, 12).is_ok());
+        assert!(game.add_initiative(belf_id, 12).is_ok());
+
+        assert_eq!(None, game.on_deck());
+    }
+
+    #[test]
+    pub fn test_on_deck_none_remain()
+    {
+        let mut game = Game::new();
+        let dorf = build_dwarf();
+        let dorf_id = dorf.id;
+        let mork = build_orc();
+        let mork_id = mork.id;
+        let belf = build_elf();
+        let belf_id = belf.id;
+
+        populate!(&mut game, dorf, mork, belf);
+
+        assert!(game.begin_initiative_roll().is_ok());
+        assert!(game.add_initiative(dorf_id, 9).is_ok());
+        assert!(game.add_initiative(mork_id, 12).is_ok());
+        assert!(game.add_initiative(belf_id, 12).is_ok());
+
+        assert!(game.begin_initiative_passes().is_ok());
+
+        assert!(game.take_action(mork_id, ActionType::Complex).is_ok());
+        assert!(game.take_action(belf_id, ActionType::Complex).is_ok());
+
+        assert!(game.advance_initiative().is_ok());
+        assert_eq!(None, game.on_deck());
+
     }
 
     #[test]
