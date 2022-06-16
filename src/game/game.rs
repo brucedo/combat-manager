@@ -163,7 +163,10 @@ impl Game {
         self.current_state = State::PreCombat;
         self.current_turn_id.clear();
         self.next_id.clear();
-        // self.initiative_player_map.clear();
+        self.combatant_data.clear();
+        self.current_initiative = 0;
+        self.next_initiative = 0;
+        self.init_tracker.reset();
     }
 
     pub fn add_combatant(self: &mut Game, combatant: Uuid) -> Result<(), GameError>
@@ -851,6 +854,108 @@ mod tests
 
         assert!(game.advance_initiative().is_ok());
         assert_eq!(None, game.on_deck());
+
+    }
+
+    #[test]
+    pub fn test_get_combatants()
+    {
+        let mut game = Game::new();
+
+        let mork = build_orc();
+        let mork_id = mork.id;
+        let dorf = build_dwarf();
+        let dorf_id = dorf.id;
+
+        populate!(&mut game, mork, dorf);
+
+        let combatants = game.get_combatants();
+
+        assert_eq!(2, combatants.len());
+        assert!(combatants.contains(&mork_id));
+        assert!(combatants.contains(&dorf_id));
+
+    }
+
+    #[test]
+    pub fn test_get_some_combatants()
+    {
+        let mut game = Game::new();
+
+        let mork = build_orc();
+        let mork_id = mork.id;
+        let dorf = build_dwarf();
+        let dorf_id = dorf.id;
+        let melf = build_elf();
+        let melf_id = melf.id;
+
+        populate!(&mut game, mork, dorf);
+        game.add_cast_member(melf);
+
+        let combatants = game.get_combatants();
+
+        assert_eq!(2, combatants.len());
+        assert!(combatants.contains(&mork_id));
+        assert!(combatants.contains(&dorf_id));
+    }
+
+    #[test]
+    pub fn test_get_no_combatants()
+    {
+        let mut game = Game::new();
+
+        let mork = build_orc();
+        let mork_id = mork.id;
+        let dorf = build_dwarf();
+        let dorf_id = dorf.id;
+        let melf = build_elf();
+        let melf_id = melf.id;
+
+        game.add_cast_member(mork);
+        game.add_cast_member(dorf);
+        game.add_cast_member(melf);
+
+        let combatants = game.get_combatants();
+
+        assert_eq!(0, combatants.len());
+    }
+
+    #[test]
+    pub fn test_get_combatants_no_cast()
+    {
+        let game = Game::new();
+
+        let combatants = game.get_combatants();
+
+        assert_eq!(0, combatants.len());
+    }
+
+    #[test]
+    pub fn test_end_combat()
+    {
+        let mut game = Game::new();
+
+        let mork = build_orc();
+        let mork_id = mork.id;
+        let dorf = build_dwarf();
+        let dorf_id = dorf.id;
+        let melf = build_elf();
+        let elf_id = melf.id;
+
+        populate!(&mut game, mork, dorf, melf);
+
+        assert!(game.begin_initiative_roll().is_ok());
+
+        assert!(game.add_initiative(mork_id, 13).is_ok());
+        assert!(game.add_initiative(dorf_id, 22).is_ok());
+        assert!(game.add_initiative(elf_id, 14).is_ok());
+
+        assert!(game.begin_initiative_passes().is_ok());
+
+        assert_eq!(game.get_combatants().len(), 3);
+
+        game.end_combat();
+        assert_eq!(game.get_combatants().len(), 0);
 
     }
 

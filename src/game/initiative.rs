@@ -61,6 +61,13 @@ impl InitTracker {
         
     }
 
+    pub fn reset(&mut self)
+    {
+        self.initiatives.clear();
+        self.current_pass = 0;
+        self.overflow.clear();
+    }
+
     pub fn add_new_event(&mut self, id: Uuid, initiative: i8, passes: usize, astral_passes: usize, matrix_passes: usize) -> PassState
     {
         let init = Initiative{id, initiative, in_astral_space: false, astral_passes, in_matrix: false, matrix_passes, passes};
@@ -353,6 +360,23 @@ mod tests
     }
 
     #[test]
+    pub fn test_reset()
+    {
+        let mut tracker = InitTracker::new(Some(15));
+
+        let fake_id = Uuid::new_v4();
+
+        tracker.add_new_event(fake_id, 4, 1, 2, 3);
+        tracker.add_new_event(Uuid::new_v4(), 6, 1, 2, 3);
+        tracker.begin_new_pass();
+
+        tracker.reset();
+
+        assert_eq!(tracker.current_pass(), 0);
+        assert_eq!(tracker.get_ordered_inits().len(), 0);
+    }
+
+    #[test]
     pub fn test_on_next_pass()
     {
         init();
@@ -625,7 +649,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_reset()
+    pub fn test_end_turn_resets()
     {
         init();
         
