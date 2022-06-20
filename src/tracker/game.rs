@@ -210,7 +210,7 @@ impl Game {
         Ok(())
     }
 
-    pub fn begin_initiative_roll(self: &mut Game) -> Result<(), GameError>
+    pub fn start_initiative_phase(self: &mut Game) -> Result<(), GameError>
     {
         debug!("Starting initiative.");
         if self.current_state != State::PreCombat && self.current_state != State::InitiativePass
@@ -236,7 +236,7 @@ impl Game {
         Ok(())
     }
 
-    pub fn add_initiative(self: &mut Game, character_id: Uuid, initiative: i8) -> Result<(), GameError>
+    pub fn accept_initiative_roll(self: &mut Game, character_id: Uuid, initiative: i8) -> Result<(), GameError>
     {
         if self.current_state != State::Initiative
         {
@@ -268,7 +268,7 @@ impl Game {
         Ok(())
     }
 
-    pub fn begin_initiative_passes(self: &mut Game) -> Result<(), GameError>
+    pub fn start_initiative_passes(self: &mut Game) -> Result<(), GameError>
     {
         for combatant in self.combatant_data.values()
         {
@@ -330,7 +330,7 @@ impl Game {
         Ok(())
     }
 
-    pub fn advance_initiative_pass(self: &mut Game) -> Result<(), GameError>
+    pub fn next_initiative_pass(self: &mut Game) -> Result<(), GameError>
     {
         if self.current_state != State::InitiativePass
         {
@@ -367,7 +367,7 @@ impl Game {
 
     }
 
-    pub fn advance_initiative(self: &mut Game) -> Result<(), GameError>
+    pub fn next_initiative(self: &mut Game) -> Result<(), GameError>
     {
         if self.current_state != State::InitiativePass
         {
@@ -623,8 +623,8 @@ pub enum ActionType {
 
 #[derive(Debug)]
 pub struct GameError {
-    kind: ErrorKind,
-    msg: String,
+    pub kind: ErrorKind,
+    pub msg: String,
 }
 
 impl GameError {
@@ -659,7 +659,7 @@ mod tests
     use log::debug;
     use uuid::Uuid;
 
-    use crate::game::{game::ActionType, character::{Character, Metatypes}};
+    use crate::tracker::{game::ActionType, character::{Character, Metatypes}};
 
     use super::Game;
 
@@ -749,12 +749,12 @@ mod tests
 
         populate!(&mut game, dorf, mork, belf);
 
-        assert!(game.begin_initiative_roll().is_ok());
-        assert!(game.add_initiative(dorf_id, 9).is_ok());
-        assert!(game.add_initiative(mork_id, 12).is_ok());
-        assert!(game.add_initiative(belf_id, 12).is_ok());
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(dorf_id, 9).is_ok());
+        assert!(game.accept_initiative_roll(mork_id, 12).is_ok());
+        assert!(game.accept_initiative_roll(belf_id, 12).is_ok());
 
-        assert!(game.begin_initiative_passes().is_ok());
+        assert!(game.start_initiative_passes().is_ok());
 
         assert!(game.take_action(mork_id, ActionType::Complex).is_ok());
 
@@ -779,12 +779,12 @@ mod tests
 
         populate!(&mut game, dorf, mork, belf);
 
-        assert!(game.begin_initiative_roll().is_ok());
-        assert!(game.add_initiative(dorf_id, 9).is_ok());
-        assert!(game.add_initiative(mork_id, 12).is_ok());
-        assert!(game.add_initiative(belf_id, 12).is_ok());
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(dorf_id, 9).is_ok());
+        assert!(game.accept_initiative_roll(mork_id, 12).is_ok());
+        assert!(game.accept_initiative_roll(belf_id, 12).is_ok());
 
-        assert!(game.begin_initiative_passes().is_ok());
+        assert!(game.start_initiative_passes().is_ok());
 
         assert!(game.take_action(mork_id, ActionType::Complex).is_ok());
         assert!(game.take_action(belf_id, ActionType::Complex).is_ok());
@@ -809,12 +809,12 @@ mod tests
         assert!(game.add_combatant(dorf_id).is_ok());
         assert!(game.add_combatant(mork_id).is_ok());
 
-        assert!(game.begin_initiative_roll().is_ok());
+        assert!(game.start_initiative_phase().is_ok());
 
         assert!(game.waiting_for().is_none());
 
-        assert!(game.add_initiative(dorf_id, 22).is_ok());
-        assert!(game.add_initiative(mork_id, 12).is_ok());
+        assert!(game.accept_initiative_roll(dorf_id, 22).is_ok());
+        assert!(game.accept_initiative_roll(mork_id, 12).is_ok());
         assert!(game.waiting_for().is_none());
     }
 
@@ -831,12 +831,12 @@ mod tests
 
         populate!(&mut game, dorf, mork, belf);
 
-        assert!(game.begin_initiative_roll().is_ok());
-        assert!(game.add_initiative(dorf_id, 9).is_ok());
-        assert!(game.add_initiative(mork_id, 12).is_ok());
-        assert!(game.add_initiative(belf_id, 12).is_ok());
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(dorf_id, 9).is_ok());
+        assert!(game.accept_initiative_roll(mork_id, 12).is_ok());
+        assert!(game.accept_initiative_roll(belf_id, 12).is_ok());
 
-        assert!(game.begin_initiative_passes().is_ok());
+        assert!(game.start_initiative_passes().is_ok());
 
         let option = game.on_deck();
         assert_ne!(None, option);
@@ -858,10 +858,10 @@ mod tests
 
         populate!(&mut game, dorf, mork, belf);
 
-        assert!(game.begin_initiative_roll().is_ok());
-        assert!(game.add_initiative(dorf_id, 9).is_ok());
-        assert!(game.add_initiative(mork_id, 12).is_ok());
-        assert!(game.add_initiative(belf_id, 12).is_ok());
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(dorf_id, 9).is_ok());
+        assert!(game.accept_initiative_roll(mork_id, 12).is_ok());
+        assert!(game.accept_initiative_roll(belf_id, 12).is_ok());
 
         assert_eq!(None, game.on_deck());
     }
@@ -879,17 +879,17 @@ mod tests
 
         populate!(&mut game, dorf, mork, belf);
 
-        assert!(game.begin_initiative_roll().is_ok());
-        assert!(game.add_initiative(dorf_id, 9).is_ok());
-        assert!(game.add_initiative(mork_id, 12).is_ok());
-        assert!(game.add_initiative(belf_id, 12).is_ok());
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(dorf_id, 9).is_ok());
+        assert!(game.accept_initiative_roll(mork_id, 12).is_ok());
+        assert!(game.accept_initiative_roll(belf_id, 12).is_ok());
 
-        assert!(game.begin_initiative_passes().is_ok());
+        assert!(game.start_initiative_passes().is_ok());
 
         assert!(game.take_action(mork_id, ActionType::Complex).is_ok());
         assert!(game.take_action(belf_id, ActionType::Complex).is_ok());
 
-        assert!(game.advance_initiative().is_ok());
+        assert!(game.next_initiative().is_ok());
         assert_eq!(None, game.on_deck());
 
     }
@@ -977,13 +977,13 @@ mod tests
 
         populate!(&mut game, mork, dorf, melf);
 
-        assert!(game.begin_initiative_roll().is_ok());
+        assert!(game.start_initiative_phase().is_ok());
 
-        assert!(game.add_initiative(mork_id, 13).is_ok());
-        assert!(game.add_initiative(dorf_id, 22).is_ok());
-        assert!(game.add_initiative(elf_id, 14).is_ok());
+        assert!(game.accept_initiative_roll(mork_id, 13).is_ok());
+        assert!(game.accept_initiative_roll(dorf_id, 22).is_ok());
+        assert!(game.accept_initiative_roll(elf_id, 14).is_ok());
 
-        assert!(game.begin_initiative_passes().is_ok());
+        assert!(game.start_initiative_passes().is_ok());
 
         assert_eq!(game.get_combatants().len(), 3);
 
@@ -1087,7 +1087,7 @@ mod tests
         assert!(game.add_combatant(melf_id).is_ok());
         assert!(game.add_combatant(zorc_id).is_ok());
 
-        let result = game.begin_initiative_roll();
+        let result = game.start_initiative_phase();
 
         assert!(result.is_ok());
         assert_eq!(game.current_state(), String::from("Initiative Rolls"));
@@ -1107,16 +1107,16 @@ mod tests
         populate!(&mut game, melf, mork, dorf);
 
         // transition from PreCombat
-        assert!(game.begin_initiative_roll().is_ok());
-        assert!(game.add_initiative(melf_id, 18).is_ok());
-        assert!(game.add_initiative(mork_id, 12).is_ok());
-        assert!(game.add_initiative(dorf_id, 13).is_ok());
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(melf_id, 18).is_ok());
+        assert!(game.accept_initiative_roll(mork_id, 12).is_ok());
+        assert!(game.accept_initiative_roll(dorf_id, 13).is_ok());
     
         // transition into InitiativePass
-        assert!(game.begin_initiative_passes().is_ok());
+        assert!(game.start_initiative_passes().is_ok());
 
         // now try to jump right back to initiative roll
-        assert!(game.begin_initiative_roll().is_ok());
+        assert!(game.start_initiative_phase().is_ok());
 
     }
 
@@ -1129,7 +1129,7 @@ mod tests
 
         game.add_cast_member(lef);
 
-        let result = game.begin_initiative_roll();
+        let result = game.start_initiative_phase();
 
         assert!(result.is_err());
         assert_eq!(game.current_state(), String::from("PreCombat"));
@@ -1145,7 +1145,7 @@ mod tests
         game.add_cast_member(lef);
         assert!(game.add_combatant(lef_id).is_ok());
 
-        let result = game.add_initiative(lef_id, 4);
+        let result = game.accept_initiative_roll(lef_id, 4);
 
         assert!(result.is_err());
     }
@@ -1161,9 +1161,9 @@ mod tests
 
         let mut game = Game::new();
         populate!(&mut game, zorc, dorf);
-        assert!(game.begin_initiative_roll().is_ok());
+        assert!(game.start_initiative_phase().is_ok());
 
-        let result = game.add_initiative(zorc_id, 4);
+        let result = game.accept_initiative_roll(zorc_id, 4);
 
         assert!(result.is_ok());
     }
@@ -1183,11 +1183,11 @@ mod tests
 
         let mut game = Game::new();
         populate!(&mut game, zorc, dorf);
-        assert!(game.begin_initiative_roll().is_ok());
+        assert!(game.start_initiative_phase().is_ok());
 
-        let result = game.add_initiative(zorc_id, 2);
+        let result = game.accept_initiative_roll(zorc_id, 2);
         assert!(result.is_ok());
-        let result = game.add_initiative(dorf_id, 13);
+        let result = game.accept_initiative_roll(dorf_id, 13);
         assert!(result.is_ok());
     }
 
@@ -1201,9 +1201,9 @@ mod tests
 
         let mut game = Game::new();
         populate!(&mut game, zorc, mork);
-        assert!(game.begin_initiative_roll().is_ok());
+        assert!(game.start_initiative_phase().is_ok());
 
-        let result = game.add_initiative(Uuid::new_v4(), 2);
+        let result = game.accept_initiative_roll(Uuid::new_v4(), 2);
         assert!(result.is_err());
     }
 
@@ -1224,13 +1224,13 @@ mod tests
         let mut game = Game::new();
         populate!(&mut game, zorc, mork, dork);
 
-        assert!(game.begin_initiative_roll().is_ok());
+        assert!(game.start_initiative_phase().is_ok());
 
-        assert!(game.add_initiative(zorc_id, 4).is_ok());
-        assert!(game.add_initiative(mork_id, 8).is_ok());
-        assert!(game.add_initiative(dork_id, 3).is_ok());
+        assert!(game.accept_initiative_roll(zorc_id, 4).is_ok());
+        assert!(game.accept_initiative_roll(mork_id, 8).is_ok());
+        assert!(game.accept_initiative_roll(dork_id, 3).is_ok());
 
-        let result = game.begin_initiative_passes();
+        let result = game.start_initiative_passes();
 
         assert_eq!(game.current_state(), String::from("Initiative Pass"));
         assert!(result.is_ok());
@@ -1251,11 +1251,11 @@ mod tests
         let mut game = Game::new ();
         populate!(&mut game, zorc, dork, melf);
 
-        assert!(game.begin_initiative_roll().is_ok());
-        assert!(game.add_initiative(zorc_id, 1).is_ok());
-        assert!(game.add_initiative(dork_id, 15).is_ok());
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(zorc_id, 1).is_ok());
+        assert!(game.accept_initiative_roll(dork_id, 15).is_ok());
 
-        let result = game.begin_initiative_passes();
+        let result = game.start_initiative_passes();
 
         assert_eq!(game.current_state(), String::from("Initiative Rolls"));
         assert!(result.is_err());
@@ -1276,14 +1276,14 @@ mod tests
         let mut game = Game::new();
         populate!(&mut game, zorc, dork, melf);
 
-        assert!(game.begin_initiative_roll().is_ok());
-        assert!(game.add_initiative(zorc_id, 23).is_ok());
-        assert!(game.add_initiative(melf_id, 20).is_ok());
-        assert!(game.add_initiative(dork_id, 33).is_ok());
-        assert!(game.begin_initiative_passes().is_ok());
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(zorc_id, 23).is_ok());
+        assert!(game.accept_initiative_roll(melf_id, 20).is_ok());
+        assert!(game.accept_initiative_roll(dork_id, 33).is_ok());
+        assert!(game.start_initiative_passes().is_ok());
         
         // Attempting to advance to the next initiative pass should result in failure.
-        let result = game.advance_initiative_pass();
+        let result = game.next_initiative_pass();
         assert!(result.is_err());
         debug!("{}", result.unwrap_err().msg);
     }
@@ -1303,20 +1303,20 @@ mod tests
         let mut game = Game::new();
         populate!(&mut game, zorc, dork, melf);
 
-        assert!(game.begin_initiative_roll().is_ok());
-        assert!(game.add_initiative(zorc_id, 23).is_ok());
-        assert!(game.add_initiative(melf_id, 20).is_ok());
-        assert!(game.add_initiative(dork_id, 33).is_ok());
-        assert!(game.begin_initiative_passes().is_ok());
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(zorc_id, 23).is_ok());
+        assert!(game.accept_initiative_roll(melf_id, 20).is_ok());
+        assert!(game.accept_initiative_roll(dork_id, 33).is_ok());
+        assert!(game.start_initiative_passes().is_ok());
 
         assert!(game.take_action(dork_id, ActionType::Complex).is_ok());
-        assert!(game.advance_initiative().is_ok());
+        assert!(game.next_initiative().is_ok());
         assert!(game.take_action(zorc_id, ActionType::Complex).is_ok());
-        assert!(game.advance_initiative().is_ok());
+        assert!(game.next_initiative().is_ok());
         assert!(game.take_action(melf_id, ActionType::Complex).is_ok());
-        assert!(game.advance_initiative().is_ok());
+        assert!(game.next_initiative().is_ok());
 
-        assert!(game.advance_initiative_pass().is_err());
+        assert!(game.next_initiative_pass().is_err());
 
     }
 
@@ -1335,12 +1335,12 @@ mod tests
         let mut game = Game::new();
         populate!(&mut game, zorc, dork, melf);
 
-        assert!(game.begin_initiative_roll().is_ok());
-        assert!(game.add_initiative(zorc_id, 23).is_ok());
-        assert!(game.add_initiative(melf_id, 20).is_ok());
-        assert!(game.add_initiative(dork_id, 33).is_ok());
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(zorc_id, 23).is_ok());
+        assert!(game.accept_initiative_roll(melf_id, 20).is_ok());
+        assert!(game.accept_initiative_roll(dork_id, 33).is_ok());
         
-        assert!(game.advance_initiative_pass().is_err());
+        assert!(game.next_initiative_pass().is_err());
     }
 
     #[test]
@@ -1356,19 +1356,19 @@ mod tests
         let mut game = Game::new();
         populate!(&mut game, zorc, dork, melf);
 
-        assert!(game.begin_initiative_roll().is_ok());
-        assert!(game.add_initiative(zorc_id, 23).is_ok());
-        assert!(game.add_initiative(melf_id, 20).is_ok());
-        assert!(game.add_initiative(dork_id, 33).is_ok());
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(zorc_id, 23).is_ok());
+        assert!(game.accept_initiative_roll(melf_id, 20).is_ok());
+        assert!(game.accept_initiative_roll(dork_id, 33).is_ok());
 
-        assert!(game.begin_initiative_passes().is_ok());
+        assert!(game.start_initiative_passes().is_ok());
 
         assert!(game.take_action(dork_id, ActionType::Complex).is_ok());
-        assert!(game.advance_initiative().is_ok());
+        assert!(game.next_initiative().is_ok());
         assert!(game.take_action(zorc_id, ActionType::Complex).is_ok());
-        assert!(game.advance_initiative().is_ok());
+        assert!(game.next_initiative().is_ok());
         assert!(game.take_action(melf_id, ActionType::Complex).is_ok());
-        assert!(game.advance_initiative().is_ok());
+        assert!(game.next_initiative().is_ok());
         
     }
 
@@ -1387,14 +1387,14 @@ mod tests
         let mut game = Game::new();
         populate!(&mut game, zorc, dork, melf);
 
-        assert!(game.begin_initiative_roll().is_ok());
-        assert!(game.add_initiative(zorc_id, 23).is_ok());
-        assert!(game.add_initiative(melf_id, 20).is_ok());
-        assert!(game.add_initiative(dork_id, 33).is_ok());
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(zorc_id, 23).is_ok());
+        assert!(game.accept_initiative_roll(melf_id, 20).is_ok());
+        assert!(game.accept_initiative_roll(dork_id, 33).is_ok());
 
-        assert!(game.begin_initiative_passes().is_ok());
+        assert!(game.start_initiative_passes().is_ok());
 
-        assert!(game.advance_initiative().is_err());
+        assert!(game.next_initiative().is_err());
 
 
     }
@@ -1418,19 +1418,19 @@ mod tests
         let mut game = Game::new();
         populate!(&mut game, zorc, dork, melf);
 
-        assert!(game.begin_initiative_roll().is_ok());
-        assert!(game.add_initiative(zorc_id, 23).is_ok());
-        assert!(game.add_initiative(melf_id, 20).is_ok());
-        assert!(game.add_initiative(dork_id, 33).is_ok());
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(zorc_id, 23).is_ok());
+        assert!(game.accept_initiative_roll(melf_id, 20).is_ok());
+        assert!(game.accept_initiative_roll(dork_id, 33).is_ok());
 
-        assert!(game.begin_initiative_passes().is_ok());
+        assert!(game.start_initiative_passes().is_ok());
 
         assert!(game.take_action(dork_id, ActionType::Simple).is_ok());
         assert!(game.take_action(dork_id, ActionType::Complex).is_err());
-        assert!(game.advance_initiative().is_err());
+        assert!(game.next_initiative().is_err());
         assert!(game.take_action(dork_id, ActionType::Simple).is_ok());
         assert!(game.take_action(dork_id, ActionType::Simple).is_err());
-        assert!(game.advance_initiative().is_ok());
+        assert!(game.next_initiative().is_ok());
     }
 
     #[test]
@@ -1448,17 +1448,17 @@ mod tests
         let mut game = Game::new();
         populate!(&mut game, zorc, dork, melf);
 
-        assert!(game.begin_initiative_roll().is_ok());
-        assert!(game.add_initiative(zorc_id, 23).is_ok());
-        assert!(game.add_initiative(melf_id, 20).is_ok());
-        assert!(game.add_initiative(dork_id, 33).is_ok());
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(zorc_id, 23).is_ok());
+        assert!(game.accept_initiative_roll(melf_id, 20).is_ok());
+        assert!(game.accept_initiative_roll(dork_id, 33).is_ok());
 
-        assert!(game.begin_initiative_passes().is_ok());
+        assert!(game.start_initiative_passes().is_ok());
 
         assert!(game.take_action(dork_id, ActionType::Complex).is_ok());
         assert!(game.take_action(dork_id, ActionType::Simple).is_err());
         assert!(game.take_action(dork_id, ActionType::Complex).is_err());
-        assert!(game.advance_initiative().is_ok());
+        assert!(game.next_initiative().is_ok());
     }
 
     #[test]
@@ -1476,17 +1476,17 @@ mod tests
         let mut game = Game::new();
         populate!(&mut game, zorc, dork, melf);
 
-        assert!(game.begin_initiative_roll().is_ok());
-        assert!(game.add_initiative(zorc_id, 23).is_ok());
-        assert!(game.add_initiative(melf_id, 20).is_ok());
-        assert!(game.add_initiative(dork_id, 33).is_ok());
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(zorc_id, 23).is_ok());
+        assert!(game.accept_initiative_roll(melf_id, 20).is_ok());
+        assert!(game.accept_initiative_roll(dork_id, 33).is_ok());
 
-        assert!(game.begin_initiative_passes().is_ok());
+        assert!(game.start_initiative_passes().is_ok());
 
         assert!(game.take_action(dork_id, ActionType::Free).is_ok());
         assert!(game.take_action(dork_id, ActionType::Simple).is_ok());
         assert!(game.take_action(dork_id, ActionType::Simple).is_ok());
-        assert!(game.advance_initiative().is_ok());
+        assert!(game.next_initiative().is_ok());
     }
 
     #[test]
@@ -1504,16 +1504,16 @@ mod tests
         let mut game = Game::new();
         populate!(&mut game, zorc, dork, melf);
 
-        assert!(game.begin_initiative_roll().is_ok());
-        assert!(game.add_initiative(zorc_id, 23).is_ok());
-        assert!(game.add_initiative(melf_id, 20).is_ok());
-        assert!(game.add_initiative(dork_id, 33).is_ok());
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(zorc_id, 23).is_ok());
+        assert!(game.accept_initiative_roll(melf_id, 20).is_ok());
+        assert!(game.accept_initiative_roll(dork_id, 33).is_ok());
 
-        assert!(game.begin_initiative_passes().is_ok());
+        assert!(game.start_initiative_passes().is_ok());
 
         assert!(game.take_action(dork_id, ActionType::Free).is_ok());
         assert!(game.take_action(dork_id, ActionType::Complex).is_ok());
-        assert!(game.advance_initiative().is_ok());
+        assert!(game.next_initiative().is_ok());
     }
 
     #[test]
@@ -1531,17 +1531,17 @@ mod tests
         let mut game = Game::new();
         populate!(&mut game, zorc, dork, melf);
 
-        assert!(game.begin_initiative_roll().is_ok());
-        assert!(game.add_initiative(zorc_id, 23).is_ok());
-        assert!(game.add_initiative(melf_id, 20).is_ok());
-        assert!(game.add_initiative(dork_id, 33).is_ok());
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(zorc_id, 23).is_ok());
+        assert!(game.accept_initiative_roll(melf_id, 20).is_ok());
+        assert!(game.accept_initiative_roll(dork_id, 33).is_ok());
 
-        assert!(game.begin_initiative_passes().is_ok());
+        assert!(game.start_initiative_passes().is_ok());
 
         assert!(game.take_action(melf_id, ActionType::Free).is_ok());
         assert!(game.take_action(dork_id, ActionType::Simple).is_ok());
         assert!(game.take_action(dork_id, ActionType::Simple).is_ok());
-        assert!(game.advance_initiative().is_ok());
+        assert!(game.next_initiative().is_ok());
     }
 
     #[test]
@@ -1559,17 +1559,17 @@ mod tests
         let mut game = Game::new();
         populate!(&mut game, zorc, dork, melf);
 
-        assert!(game.begin_initiative_roll().is_ok());
-        assert!(game.add_initiative(zorc_id, 23).is_ok());
-        assert!(game.add_initiative(melf_id, 20).is_ok());
-        assert!(game.add_initiative(dork_id, 33).is_ok());
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(zorc_id, 23).is_ok());
+        assert!(game.accept_initiative_roll(melf_id, 20).is_ok());
+        assert!(game.accept_initiative_roll(dork_id, 33).is_ok());
 
-        assert!(game.begin_initiative_passes().is_ok());
+        assert!(game.start_initiative_passes().is_ok());
 
         assert!(game.take_action(dork_id, ActionType::Free).is_ok());
         assert!(game.take_action(melf_id, ActionType::Simple).is_err());
         assert!(game.take_action(zorc_id, ActionType::Simple).is_err());
-        assert!(game.advance_initiative().is_err());
+        assert!(game.next_initiative().is_err());
     }
 
     #[test]
@@ -1587,16 +1587,16 @@ mod tests
         let mut game = Game::new();
         populate!(&mut game, zorc, dork, melf);
 
-        assert!(game.begin_initiative_roll().is_ok());
-        assert!(game.add_initiative(zorc_id, 23).is_ok());
-        assert!(game.add_initiative(melf_id, 20).is_ok());
-        assert!(game.add_initiative(dork_id, 33).is_ok());
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(zorc_id, 23).is_ok());
+        assert!(game.accept_initiative_roll(melf_id, 20).is_ok());
+        assert!(game.accept_initiative_roll(dork_id, 33).is_ok());
 
-        assert!(game.begin_initiative_passes().is_ok());
+        assert!(game.start_initiative_passes().is_ok());
 
         assert!(game.take_action(dork_id, ActionType::Free).is_ok());
         assert!(game.take_action(melf_id, ActionType::Complex).is_err());
-        assert!(game.advance_initiative().is_err());
+        assert!(game.next_initiative().is_err());
     }
 
 
