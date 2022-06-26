@@ -1,38 +1,45 @@
 use log::debug;
-use poem::{Route, get, handler, listener::TcpListener, Server, Request, web::Path};
-use tokio::sync::mpsc::Sender;
+use rocket::State;
+use tokio::sync::{mpsc::{Sender, channel}};
 use uuid::Uuid;
+use rocket::get;
 
-use crate::MainMessages;
+use crate::{MainMessages, gamerunner::{RequestMessage, ResponseMessage, NewGame}};
 
 
-pub async fn launch_server(main_sender: Sender<MainMessages>)
+#[get("/api/game/new")]
+pub async fn new_game(state: &State<Sender<RequestMessage>>)
 {
-    debug!("Server launched - taking requests.");
-    // let temp = main_sender.clone();
-    let made_api_handler = poem::endpoint::make(move |req| { 
-        let moved = main_sender.clone();
-        async move {api_handler(moved, req).await;}
-    });
-    let routes = Route::new().at("/api", get(made_api_handler))
-        .at("/api/:game_id", |demo: Path<String>| {let moved = main_sender.clone(); async move {new_game(moved, demo).await}})
-    ;
-    Server::new(TcpListener::bind("localhost:8080")).run(routes).await;
+    debug!("Request received to generate new game.");
+    let local_sender = state.clone();
+
+    let (runner_sender, mut runner_receiver) = tokio::sync::oneshot::channel::<ResponseMessage>();
+    let msg = RequestMessage::New(NewGame{response: runner_sender});
+
+    match local_sender.send(msg).await
+    {
+        Ok(_) => 
+        {
+            match runner_receiver.await
+            {
+                Ok(game_msg) => {
+                    match game_msg
+                    {
+                        ResponseMessage::Created(id) => {
+                            debug!("Game created.  ID: {}", id);
+                        },
+                        ResponseMessage::Error(err) => {
+                            debug!("Game creation error.  Message: {}", err.message);
+                        },
+                        _ => {unreachable!()}
 }
-
-#[handler]
-pub fn bootstrap() -> &'static str
-{
-    
-    return "A basic handler.";
-}
-
-pub async fn api_handler(sender: Sender<MainMessages>, req: Request)
-{
-    // req.
-}
-
-pub async fn new_game(sender: Sender<MainMessages>, Path(demo): Path<String>) -> &'static str
-{
-    return "what shite is this";
+                },
+                Err(_) => todo!(),
+            }
+        },
+        Err(_) => 
+        {
+            debug!("Blocking send failed on game create.  Channel may be defunct.");
+        },
+    }
 }

@@ -16,7 +16,7 @@ pub async fn game_runner(mut message_queue: Receiver<RequestMessage>)
     while let Some(message) = message_queue.recv().await
     {
         let response: ResponseMessage;
-        let channel: Sender<ResponseMessage>;
+        let channel: tokio::sync::oneshot::Sender<ResponseMessage>;
         match message {
             RequestMessage::New(response_struct) => {
                 let game_id = Uuid::new_v4();
@@ -120,7 +120,7 @@ pub async fn game_runner(mut message_queue: Receiver<RequestMessage>)
             }
         }
 
-        channel.send(response).await;
+        channel.send(response);
     }
 }
 
@@ -155,26 +155,26 @@ pub enum ResponseMessage
 
 pub struct NewGame
 {
-    pub response: Sender<ResponseMessage>,
+    pub response: tokio::sync::oneshot::Sender<ResponseMessage>,
 }
 
 pub struct CombatSetup
 {
-    pub response: Sender<ResponseMessage>,
+    pub response: tokio::sync::oneshot::Sender<ResponseMessage>,
     pub game_id: Uuid,
     pub combatants: Vec<Uuid>,
 }
 
 pub struct AddCharacter
 {
-    pub response: Sender<ResponseMessage>,
+    pub response: tokio::sync::oneshot::Sender<ResponseMessage>,
     pub game_id: Uuid,
     pub character: Character,
 }
 
 pub struct AddInitiativeRoll
 {
-    pub response: Sender<ResponseMessage>,
+    pub response: tokio::sync::oneshot::Sender<ResponseMessage>,
     pub game_id: Uuid,
     pub character_id: Uuid,
     pub roll: i8,
