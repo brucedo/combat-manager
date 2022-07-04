@@ -27,7 +27,7 @@ pub async fn game_runner(mut message_queue: Receiver<RequestMessage>)
                 // response_struct.response.send(ResponseMessage::Created(game_id)).await;
             },
             RequestMessage::AddCharacter(character_data) => {
-                channel = character_data.response;
+                channel = character_data.reply_channel;
                 match running_games.entry(character_data.game_id)
                 {
                     std::collections::hash_map::Entry::Occupied(mut entry) => {
@@ -56,7 +56,7 @@ pub async fn game_runner(mut message_queue: Receiver<RequestMessage>)
                                         Error 
                                         { 
                                             message: String::from(format!("Character ID does not exist: {}", result.msg)), 
-                                            kind: ErrorKind::NoMatchingGame 
+                                            kind: ErrorKind::NoSuchCharacter 
                                         }
                                     );
                                 },
@@ -73,10 +73,10 @@ pub async fn game_runner(mut message_queue: Receiver<RequestMessage>)
                         response = game_not_found(combat_struct.game_id);
                     },
                 }
-                channel = combat_struct.response;
+                channel = combat_struct.reply_channel;
             },
             RequestMessage::AddInitiativeRoll(init_data) => {
-                channel = init_data.response;
+                channel = init_data.reply_channel;
 
                 match running_games.entry(init_data.game_id)
                 {
@@ -117,7 +117,8 @@ pub async fn game_runner(mut message_queue: Receiver<RequestMessage>)
                     },
                     std::collections::hash_map::Entry::Vacant(_) => response = game_not_found(init_data.game_id),
                 }
-            }
+            },
+            _ => { todo!()}
         }
 
         channel.send(response);
@@ -141,7 +142,10 @@ pub enum RequestMessage
     New(NewGame),
     AddCharacter(AddCharacter),
     StartCombat(CombatSetup),
-    AddInitiativeRoll(AddInitiativeRoll),
+    AddInitiativeRoll(Roll),
+    AcceptInitiativeRolls,
+    StartInitiativePass,
+    BeginEndOfTurn,
 }
 
 pub enum ResponseMessage
@@ -160,21 +164,21 @@ pub struct NewGame
 
 pub struct CombatSetup
 {
-    pub response: tokio::sync::oneshot::Sender<ResponseMessage>,
+    pub reply_channel: tokio::sync::oneshot::Sender<ResponseMessage>,
     pub game_id: Uuid,
     pub combatants: Vec<Uuid>,
 }
 
 pub struct AddCharacter
 {
-    pub response: tokio::sync::oneshot::Sender<ResponseMessage>,
+    pub reply_channel: tokio::sync::oneshot::Sender<ResponseMessage>,
     pub game_id: Uuid,
     pub character: Character,
 }
 
-pub struct AddInitiativeRoll
+pub struct Roll
 {
-    pub response: tokio::sync::oneshot::Sender<ResponseMessage>,
+    pub reply_channel: tokio::sync::oneshot::Sender<ResponseMessage>,
     pub game_id: Uuid,
     pub character_id: Uuid,
     pub roll: i8,

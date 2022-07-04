@@ -3,7 +3,7 @@ use rocket::routes;
 use tokio::sync::mpsc;
 
 pub mod tracker;
-pub mod dispatcher;
+pub mod http;
 pub mod gamerunner;
 
 use crate::{gamerunner::RequestMessage};
@@ -24,7 +24,7 @@ async fn main() {
 
     let _ = rocket::build()
         .manage(runner_sender)
-        .mount("/", routes![dispatcher::new_game])
+        .mount("/", routes![http::new_game, http::get_example_char, http::add_new_character, http::change_game_state, http::get_state_demo])
         .launch()
         .await;
 }
