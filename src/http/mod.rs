@@ -1,8 +1,9 @@
 mod api;
 
 use log::debug;
-use rocket::{State, http::{Status, ContentType}, serde::json::Json, post, put, get, response::content};
+use rocket::{State, http::{Status, ContentType}, serde::json::Json, post, put, get, };
 use tokio::sync::{mpsc::Sender, oneshot::channel};
+use tokio::sync::oneshot::Receiver as OneShotReceiver;
 use uuid::Uuid;
 
 use crate::{gamerunner::{RequestMessage, ResponseMessage, NewGame, AddCharacter, CombatSetup, Roll}, http::api::{NewGameJson, InitiativeRoll},};
@@ -11,44 +12,35 @@ use self::api::{Character, AddedCharacterJson, StateChange, BeginCombat};
 
 
 #[post("/api/game/new")]
-pub async fn new_game(state: &State<Sender<RequestMessage>>) -> Result<Json<NewGameJson>, (Status, &'static str)>
+pub async fn new_game(state: &State<Sender<RequestMessage>>) -> Result<Json<NewGameJson>, (Status, String)>
 {
     debug!("Request received to generate new game.");
-    let local_sender = state.inner().clone();
+    let msg_channel = state.inner().clone();
 
-    let (runner_sender, runner_receiver) = tokio::sync::oneshot::channel::<ResponseMessage>();
+    let (runner_sender, response_channel) = channel::<ResponseMessage>();
     let msg = RequestMessage::New(NewGame{response: runner_sender});
 
-    match local_sender.send(msg).await
+    match do_send(msg, msg_channel, response_channel).await
     {
-        Ok(_) => 
-        {
-            match runner_receiver.await
-            {
-                Ok(game_msg) => {
-                    match game_msg
-                    {
-                        ResponseMessage::Created(id) => {
-                            debug!("Game created.  ID: {}", id);
-                            return Ok(Json(NewGameJson{game_id: id}));
-                        },
-                        ResponseMessage::Error(err) => {
-                            debug!("Game creation error.  Message: {}", err.message);
-                            return Err((Status::InternalServerError, "Game creation encountered some error."));
-                        },
-                        _ => {unreachable!()}
-}
+        Ok(game_msg) => {
+            match game_msg {
+                ResponseMessage::Created(id) => {
+                    debug!("Game created.  ID: {}", id);
+                    return Ok(Json(NewGameJson{game_id: id}));
                 },
-                // The game runner actually does not return an error state here.
-                Err(_) => todo!(),
+                ResponseMessage::Error(err) => {
+                    debug!("Game creation error.  Message: {}", err.message);
+                    return Err((Status::InternalServerError, err.message));
+                },
+                _ => {unreachable!()}
             }
         },
-        Err(_) => 
-        {
-            debug!("Blocking send failed on game create.  Channel may be defunct.");
-            return Err((Status::InternalServerError, "Blocking send failed on game create request.  Channel may have closed."));
+        Err(err) => {
+            return Err((Status::InternalServerError, err));
         },
     }
+
+    
 }
 
 #[get("/api/demo")]
@@ -79,129 +71,121 @@ pub fn get_state_demo() -> Json<StateChange>
 }
 
 #[post("/api/<id>/character", data = "<character>")]
-pub async fn add_new_character(id: Uuid, character: Json<Character<'_>>, state: &State<Sender<RequestMessage>>) -> Result<Json<AddedCharacterJson>, (Status, &'static str)>
+pub async fn add_new_character(id: Uuid, character: Json<Character<'_>>, state: &State<Sender<RequestMessage>>) -> 
+    Result<Json<AddedCharacterJson>, (Status, String)>
 {
     debug!("Received request to add a character to a game.");
 
-    let (request, response) = channel::<ResponseMessage>();
-    let request_sender = state.inner().clone();
+    let (request, response_channel) = channel::<ResponseMessage>();
+    let msg_channel = state.inner().clone();
     let game_char = copy_character(&character.0);
     let char_id = game_char.id.clone();
 
     let msg = RequestMessage::AddCharacter(AddCharacter{reply_channel: request, game_id: id, character: game_char});
-    
-    match request_sender.send(msg).await
+
+    match do_send(msg, msg_channel, response_channel).await
     {
-        Ok(_) => {
-            match response.await
-            {
-                // GameRunner does not return data for this request - merely "good" or "bad"
-                Ok(_msg) => 
-                {
-                    let response_json = AddedCharacterJson{ game_id: id.clone(), char_id };
-                    return Ok(Json(response_json));
-                },
-                Err(_) => 
-                {
-                    debug!("Adding a character failed; game not found is likely culprit.");
-                    return Err((Status::BadRequest, "Game ID provided not found."));
-                },
-            }
+        Ok(_msg) => {
+            let response_json = AddedCharacterJson{ game_id: id.clone(), char_id };
+            return Ok(Json(response_json));            
         },
-        Err(_) => 
-        {
-            debug!("Blocking send failed on game create.  Channel may be defunct.");
-            return Err((Status::InternalServerError, "Blocking send failed on game create request.  Channel may have closed."));
+        Err(err) => {
+            debug!("Adding a character failed: {}", err);
+            return Err((Status::BadRequest, err));
         },
     }
 }
 
 #[put("/api/<id>/state", data = "<new_state>")]
 pub async fn change_game_state(id: Uuid, new_state: Json<StateChange>, state: &State<Sender<RequestMessage>>) -> 
-    Result<(Status, (ContentType, &'static str)), (Status, &'static str)>
+    Result<(Status, (ContentType, ())), (Status, String)>
 {
-    let (os_sender, os_receiver) = channel::<ResponseMessage>();
+    let (os_sender, response_channel) = channel::<ResponseMessage>();
     let msg_channel = state.inner().clone();
     let msg: RequestMessage;
 
     match &new_state.to_state
     {
-    api::State::Combat(combat_data) => {
-        msg = RequestMessage::StartCombat(CombatSetup { reply_channel: os_sender, game_id: id, combatants: combat_data.participants.clone() });
-    },
-    api::State::InitiativeRolls => {msg = RequestMessage::AcceptInitiativeRolls},
-    api::State::InitiativePass => {msg = RequestMessage::StartInitiativePass},
-    api::State::EndOfTurn => {msg = RequestMessage::BeginEndOfTurn},
-
-
-    }
-
-    match msg_channel.send(msg).await
-    {
-        Ok(_) => {
-            match os_receiver.await {
-                Ok(response_msg) => {
-                    match response_msg {
-                        ResponseMessage::Error(err) => {
-                            let msg_str: &str;
-                            match err.kind {
-                                crate::gamerunner::ErrorKind::NoMatchingGame => {
-                                    msg_str = "No matching game found for provided game id.";
-                                },
-                                crate::gamerunner::ErrorKind::NoSuchCharacter => {
-                                    msg_str = "At least one ID in the list does not exist.";
-                                },
-                                crate::gamerunner::ErrorKind::InvalidStateAction => {
-                                    msg_str = "The game is not able to transition to the desired state."
-                                },
-                            }
-                            return Err((Status::BadRequest, msg_str));
-                        }
-                        _ => {
-                            return Ok((Status::Ok, (ContentType::JSON, "")));
-                        }
-                    }
-                    
-                },
-                Err(_err) => {
-                    debug!("Blocking send failed on game create.  Channel may be defunct.");
-                    return Err((Status::InternalServerError, "Blocking send failed on game create request.  Channel may have closed."));
-                },
-            }
+        api::State::Combat(combat_data) => {
+            msg = RequestMessage::StartCombat(CombatSetup { reply_channel: os_sender, game_id: id, combatants: combat_data.participants.clone() });
         },
-        Err(code) => {
-            debug!("Blocking send failed on game create.  Channel may be defunct.");
-            return Err((Status::InternalServerError, "Blocking send failed on game create request.  Channel may have closed."));
-        }
+        api::State::InitiativeRolls => {msg = RequestMessage::AcceptInitiativeRolls},
+        api::State::InitiativePass => {msg = RequestMessage::StartInitiativePass},
+        api::State::EndOfTurn => {msg = RequestMessage::BeginEndOfTurn},
     }
-    // let fighting_ids = Vec::from_iter(new_state)
 
-    Ok((Status::Ok, (ContentType::JSON, "")))
+    match do_send(msg, msg_channel, response_channel).await
+    {
+        Ok(response_msg) => {
+            match response_msg {
+                ResponseMessage::Error(err) => {
+                    return Err((Status::BadRequest, err.message));
+                }
+                _ => {
+                    return Ok((Status::Ok, (ContentType::JSON, ())));
+                }
+        }
+        },
+        Err(err) => {
+            return Err((Status::InternalServerError, err));
+        },
+    }
+
 }
 
 #[post("/api/<id>/initiative", data = "<character_init>")]
 pub async fn add_initiative_roll(id: Uuid, character_init: Json<InitiativeRoll>, state: &State<Sender<RequestMessage>>) ->
-    Result<(Status, (ContentType, &'static str)), (Status, &'static str)>
+    Result<(Status, (ContentType, ())), (Status, String)>
 {
-    let (os_sender, os_receiver) = channel::<ResponseMessage>();
+    let (game_sender, response_channel) = channel::<ResponseMessage>();
     let msg_channel = state.inner().clone();
     let msg : RequestMessage = RequestMessage::AddInitiativeRoll
     (
-        Roll { reply_channel: os_sender, game_id: id, character_id: character_init.char_id, roll: character_init.roll }
+        Roll { reply_channel: game_sender, game_id: id, character_id: character_init.char_id, roll: character_init.roll }
     );
+
+    match do_send(msg, msg_channel, response_channel).await
+    {
+        Ok(response) => {
+            match response
+            {
+                ResponseMessage::Error(err) => {
+                    return Err((Status::BadRequest, err.message));
+                },
+
+                ResponseMessage::InitiativeRollAdded => {
+                    return Ok((Status::Ok, (ContentType::JSON, ())));
+                },
+                _ => {unreachable!()}
+            }
+        },
+        Err(error_string) => {
+            return Err((Status::InternalServerError, error_string));
+        },
+    }
+}
+
+async fn do_send(msg: RequestMessage, msg_channel: Sender<RequestMessage>, response_channel: OneShotReceiver<ResponseMessage>) 
+    -> Result<ResponseMessage, String>
+{
 
     match msg_channel.send(msg).await
     {
         Ok(_) => {
-            
+            match response_channel.await
+            {
+                Ok(game_msg) => {return Ok(game_msg)},
+                Err(_) => {
+                    debug!("One shot send failed.  The one shot may have been closed by the other side with no message.");
+                    return Err(String::from("One shot send failed.  The one shot may have been closed by the other side with no message."))
+                },
+            }
         },
         Err(_) => {
             debug!("Blocking send failed on game create.  Channel may be defunct.");
-            return Err((Status::InternalServerError, "Blocking send failed on game create request.  Channel may have closed."));
+            return Err(String::from("Blocking send failed on game create request.  Channel may have closed."));
         },
     }
-
-    Ok((Status::Ok, (ContentType::JSON, "")))
 }
 
 fn copy_character(character: &Character) -> crate::tracker::character::Character
