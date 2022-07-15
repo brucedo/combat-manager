@@ -79,15 +79,25 @@ pub async fn add_new_character(id: Uuid, character: Json<Character<'_>>, state: 
     let (request, response_channel) = channel::<ResponseMessage>();
     let msg_channel = state.inner().clone();
     let game_char = copy_character(&character.0);
-    let char_id = game_char.id.clone();
+
+    // TODO: Fix this up proper like.
+    // let char_id = game_char.id.clone();
 
     let msg = RequestMessage::AddCharacter(AddCharacter{reply_channel: request, game_id: id, character: game_char});
 
     match do_send(msg, msg_channel, response_channel).await
     {
-        Ok(_msg) => {
-            let response_json = AddedCharacterJson{ game_id: id.clone(), char_id };
-            return Ok(Json(response_json));            
+        Ok(msg) => {
+            match msg {
+                ResponseMessage::CharacterAdded(char_id) => {
+                    let response_json = AddedCharacterJson{ game_id: id.clone(), char_id };
+                    return Ok(Json(response_json));        
+                },
+                ResponseMessage::Error(err) => {
+                    return Err((Status::BadRequest, err.message));
+                },
+                _ => {unreachable!()}
+            }
         },
         Err(err) => {
             debug!("Adding a character failed: {}", err);
@@ -210,14 +220,14 @@ fn copy_character(character: &Character) -> crate::tracker::character::Character
         game_char = crate::tracker::character::Character::new_npc(game_metatype, String::from(character.name));
     }
 
-    match character.id {
-        Some(id) => {
-            game_char.id = id;
-        },
-        None => {
-            game_char.id = Uuid::new_v4();
-        },
-    }
+    // match character.id {
+    //     Some(id) => {
+    //         game_char.id = id;
+    //     },
+    //     None => {
+    //         game_char.id = Uuid::new_v4();
+    //     },
+    // }
     
     
    game_char

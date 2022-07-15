@@ -33,6 +33,7 @@ pub async fn game_runner(mut message_queue: Receiver<RequestMessage>)
             RequestMessage::AddInitiativeRoll(roll) => {
                 (channel, response) = add_init_roll(roll, &mut running_games);
             },
+            
             _ => { todo!()}
         }
 
@@ -67,8 +68,8 @@ fn add_character(character: AddCharacter, running_games: &mut HashMap<Uuid, Game
         std::collections::hash_map::Entry::Occupied(mut entry) => {
             let game = entry.get_mut();
 
-            game.add_cast_member(character.character);
-            response = ResponseMessage::CharacterAdded;
+            let char_id = game.add_cast_member(character.character);
+            response = ResponseMessage::CharacterAdded(char_id);
         },
         std::collections::hash_map::Entry::Vacant(_) => response = game_not_found(character.game_id),
     }
@@ -196,7 +197,7 @@ pub enum ResponseMessage
 {
     Created(Uuid),
     Error(Error),
-    CharacterAdded,
+    CharacterAdded(Uuid),
     CombatStarted,
     InitiativeRollAdded,
 }
