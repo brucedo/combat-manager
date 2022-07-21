@@ -67,7 +67,7 @@ impl Game {
     // **********************************************************************************
     // Game specific setup and upkeep
 
-    pub fn add_cast_member(self: &mut Game, mut cast_member: Character) -> Uuid
+    pub fn add_cast_member(self: &mut Game, cast_member: Character) -> Uuid
     {
         let id = Uuid::new_v4();
         // cast_member.id = id;
@@ -180,7 +180,7 @@ impl Game {
                 ErrorKind::UnknownCastId, String::from(format!("ID {} does not match against any ID in the cast list.", combatant))
             ));
         }
-        let combatant_data = CharacterCombatData::new(combatant);
+        let combatant_data = CharacterCombatData::new();
 
         // TODO: Look up character and review their gear, augs etc. to fill in turns_per_round and/or update any other fields
         self.combatant_data.insert(combatant, combatant_data);
@@ -554,7 +554,6 @@ impl Game {
 }
 
 pub struct CharacterCombatData {
-    id: Uuid,
     declared_initiative: bool,
     initiative_passes: usize,
     astral_passes: usize,
@@ -568,10 +567,9 @@ pub struct CharacterCombatData {
 }
 
 impl CharacterCombatData {
-    pub fn new(id: Uuid)->CharacterCombatData {
+    pub fn new()->CharacterCombatData {
         CharacterCombatData 
         { 
-            id, 
             declared_initiative: false,
             initiative_passes: 0, 
             astral_passes: 3,

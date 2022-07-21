@@ -7,6 +7,7 @@ pub mod http;
 pub mod gamerunner;
 
 use crate::{gamerunner::RequestMessage};
+use crate::http::server::{new_game, get_example_char, add_new_character, change_game_state, get_state_demo};
 
 #[rocket::main]
 async fn main() {
@@ -24,7 +25,7 @@ async fn main() {
 
     let _ = rocket::build()
         .manage(runner_sender)
-        .mount("/", routes![http::new_game, http::get_example_char, http::add_new_character, http::change_game_state, http::get_state_demo])
+        .mount("/", routes![new_game, get_example_char, add_new_character, change_game_state, get_state_demo])
         .launch()
         .await;
 }

@@ -17,7 +17,6 @@ pub struct NewGameJson
 #[serde(crate = "rocket::serde")]
 pub struct Character<'r>
 {
-    pub id: Option<Uuid>,
     pub pc: bool,
     pub metatype: Metatypes,
     pub name: &'r str,
@@ -40,7 +39,7 @@ pub struct BeginCombat
 
 #[derive(Serialize, Deserialize)]
 #[serde(crate = "rocket::serde")]
-pub struct StateChange
+pub struct NewState
 {
     pub to_state: State,
 }

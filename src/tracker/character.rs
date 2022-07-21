@@ -65,6 +65,7 @@ impl Character
     }
 }
 
+#[derive(Copy, Clone)]
 pub enum Metatypes
 {
     Human,
