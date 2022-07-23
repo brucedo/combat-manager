@@ -314,7 +314,8 @@ pub enum ErrorKind
 #[cfg(test)]
 mod tests
 {
-    use log::debug;
+    use crate::gamerunner::CombatSetup;
+use log::debug;
     use tokio::sync::oneshot::channel;
     use tokio::sync::mpsc::channel as mpsc_channel;
     use tokio::sync::mpsc::Sender;
@@ -376,6 +377,33 @@ mod tests
 
         return Character::new_pc(metatypes[rand::random::<usize>() % 5], String::from(names[rand::random::<usize>() % 5]));
         
+    }
+
+    async fn create_and_add_char(game_input_channel: Sender<RequestMessage>, game_id: Uuid) -> Uuid
+    {
+        
+        let (game_sender, game_receiver) = channel::<ResponseMessage>();
+
+        let character = create_character();
+
+        let msg = RequestMessage::AddCharacter(AddCharacter{ reply_channel: game_sender, game_id, character });
+        let send_state = game_input_channel.send(msg).await;
+        assert!(send_state.is_ok());
+
+        let response = game_receiver.await;
+        assert!(response.is_ok());
+
+        match response
+        {
+            Ok(msg) => {
+                match msg
+                {
+                    ResponseMessage::CharacterAdded(id) => {return id;}
+                    _ => {panic!("Attempt to add character for test failed.");}
+                }
+            },
+            Err(_) => {panic!("Channel closed.")}
+        }
     }
 
     #[tokio::test]
@@ -483,5 +511,65 @@ mod tests
         }
     }
 
-    
+    #[tokio::test]
+    pub async fn add_character_no_game()
+    {
+        let game_input_channel = init();
+        let (game_sender, game_receiver) = channel::<ResponseMessage>();
+
+        let _ = add_new_game(game_input_channel.clone()).await;
+
+        let character = create_character();
+
+        let msg = RequestMessage::AddCharacter(AddCharacter{ reply_channel: game_sender, game_id: Uuid::new_v4(), character});
+        let send_state = game_input_channel.send(msg).await;
+
+        assert!(send_state.is_ok());
+
+        let response = game_receiver.await;
+        assert!(response.is_ok());
+
+        match response.unwrap()
+        {
+            ResponseMessage::Error(_) => { /* Good - error is what we expect. */ },
+            ResponseMessage::CharacterAdded(_) => {panic!("This add should have failed - should have received Error rather than CharacterAdded.")},
+            _ => {panic!("Another message was triggered, but add new character should result only in error or character added.")}
+        }
+    }
+
+    #[tokio::test]
+    pub async fn start_combat_with_characters()
+    {
+        let game_input_channel = init();
+        let (game_sender, game_receiver) = channel::<ResponseMessage>();
+
+        let game_id = add_new_game(game_input_channel.clone()).await;
+
+        let character1 = create_and_add_char(game_input_channel.clone(), game_id).await;
+        let character2 = create_and_add_char(game_input_channel.clone(), game_id).await;
+        let character3 = create_and_add_char(game_input_channel.clone(), game_id).await;
+        let character4 = create_and_add_char(game_input_channel.clone(), game_id).await;
+
+        let combatants = vec![character1, character2, character3, character4];
+
+        let msg = RequestMessage::StartCombat(CombatSetup{reply_channel: game_sender, game_id, combatants});
+
+        let response = game_input_channel.send(msg).await;
+
+        assert!(response.is_ok());
+        
+        match game_receiver.await
+        {
+            Ok(msg) => {
+                match msg {
+                    ResponseMessage::CombatStarted => {} // Success, nothing in the response to test.
+                    _ => {panic!("Combat failed to start; a different message was returned by the Game.")}
+                }
+            },
+            Err(_) => {
+                panic!("A channel error occurred during the test.")
+            }
+        }
+    }
+
 }
