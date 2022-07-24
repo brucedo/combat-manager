@@ -328,6 +328,8 @@ use log::debug;
 
     use super::AddCharacter;
     use super::ExistingGame;
+    use super::ErrorKind;
+    use super::StateChange;
 
     pub fn init() -> Sender<RequestMessage> {
         let _ = env_logger::builder().is_test(true).try_init();
@@ -370,7 +372,7 @@ use log::debug;
     {
         let names: [&str; 5] = ["Matrox", "El See-Dee", "BusShock", "Junkyard", "Lo Hax"];
         let metatypes = [Metatypes::Dwarf, Metatypes::Elf, Metatypes::Human, Metatypes::Orc, Metatypes::Troll];
-        let mut pc: bool = false;
+        let pc: bool = false;
         if rand::random::<usize>() % 2 == 1 {
             return Character::new_npc(metatypes[rand::random::<usize>() % 5], String::from(names[rand::random::<usize>() % 5]));
         }
@@ -572,4 +574,133 @@ use log::debug;
         }
     }
 
+    #[tokio::test]
+    pub async fn start_combat_with_unknown_combatants()
+    {
+        let game_input_channel = init();
+        let (game_sender, game_receiver) = channel::<ResponseMessage>();
+
+        let game_id = add_new_game(game_input_channel.clone()).await;
+
+        let _character1 = create_and_add_char(game_input_channel.clone(), game_id).await;
+        let _character2 = create_and_add_char(game_input_channel.clone(), game_id).await;
+        let _character3 = create_and_add_char(game_input_channel.clone(), game_id).await;
+        let _character4 = create_and_add_char(game_input_channel.clone(), game_id).await;
+
+        let combatants = vec![Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4()];
+
+        let msg = RequestMessage::StartCombat(CombatSetup{reply_channel: game_sender, game_id, combatants});
+
+        let response = game_input_channel.send(msg).await;
+
+        assert!(response.is_ok());
+        
+        match game_receiver.await
+        {
+            Ok(msg) => {
+                match msg {
+                    ResponseMessage::CombatStarted => {panic!("The combat stage was started, but the Ids provided should not be characters.");}
+                    ResponseMessage::Error(err) => {
+                        match err.kind
+                        {
+                            ErrorKind::NoSuchCharacter => {
+
+                            }
+                            _ => {panic!("Unexpected error message returned.");}
+                        }
+                    }
+                    _ => {panic!("Combat failed to start; a different message was returned by the Game.")}
+                }
+            },
+            Err(_) => {
+                panic!("A channel error occurred during the test.")
+            }
+        }
+
+    }
+
+    #[tokio::test]
+    pub async fn test_start_combat_unknown_game_id()
+    {
+        let game_input_channel = init();
+        let (game_sender, game_receiver) = channel::<ResponseMessage>();
+
+        let game_id = add_new_game(game_input_channel.clone()).await;
+
+        let character1 = create_and_add_char(game_input_channel.clone(), game_id).await;
+        let character2 = create_and_add_char(game_input_channel.clone(), game_id).await;
+        let character3 = create_and_add_char(game_input_channel.clone(), game_id).await;
+        let character4 = create_and_add_char(game_input_channel.clone(), game_id).await;
+
+        let combatants = vec![character1, character2, character3, character4];
+
+        let msg = RequestMessage::StartCombat(CombatSetup{reply_channel: game_sender, game_id: Uuid::new_v4(), combatants});
+
+        let response = game_input_channel.send(msg).await;
+
+        assert!(response.is_ok());
+        
+        match game_receiver.await
+        {
+            Ok(msg) => {
+                match msg {
+                    ResponseMessage::CombatStarted => {panic!("This should have returned an error!");}
+                    ResponseMessage::Error(err) => {
+                        match err.kind
+                        {
+                            ErrorKind::NoMatchingGame => {}
+                            _ => {panic!("Wrong kind: should have caught the incorrect game UUID.")}
+                        }
+                    } 
+                    _ => {panic!("Combat failed to start; a different message was returned by the Game.")}
+                }
+            },
+            Err(_) => {
+                panic!("A channel error occurred during the test.")
+            }
+        }
+
+    }
+
+    #[tokio::test]
+    pub async fn start_initiative_phase()
+    {
+        let game_input_channel = init();
+        let (game_sender, game_receiver) = channel::<ResponseMessage>();
+
+        let game_id = add_new_game(game_input_channel.clone()).await;
+
+        let character1 = create_and_add_char(game_input_channel.clone(), game_id).await;
+        let character2 = create_and_add_char(game_input_channel.clone(), game_id).await;
+        let character3 = create_and_add_char(game_input_channel.clone(), game_id).await;
+        let character4 = create_and_add_char(game_input_channel.clone(), game_id).await;
+        let combatants = vec![character1, character2, character3, character4];
+
+        let msg = RequestMessage::StartCombat(CombatSetup{reply_channel: game_sender, game_id: Uuid::new_v4(), combatants});
+
+        let response = game_input_channel.send(msg).await;
+
+        let (game_sender, game_receiver) = channel::<ResponseMessage>();
+
+        let msg = RequestMessage::BeginInitiativePhase(StateChange{game_id, reply_channel:game_sender});
+
+        let response = game_input_channel.send(msg).await;
+
+        assert!(response.is_ok());
+
+        match game_receiver.await
+        {
+            Ok(msg) => {
+                match msg
+                {
+                    ResponseMessage::InitiativePhaseStarted => {} // all is good
+                    _ => {panic!("Received an unexpected ResponseMessage.");}
+                }
+            }, 
+            Err(_) => {
+                panic!("Receiver channel errored.")
+            }        
+        }
+        
+    }
 }
