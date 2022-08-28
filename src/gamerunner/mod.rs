@@ -156,12 +156,15 @@ fn try_initiative_phase(game_data: StateChange, running_games: &mut HashMap<Uuid
     {
         std::collections::hash_map::Entry::Occupied(mut entry) => {
             let game = entry.get_mut();
+            debug!("Game exists.");
             match game.start_initiative_phase()
             {
                 Ok(_) => {
+                    debug!("Non-error returned from game.start_initiative_phase()");
                     response = ResponseMessage::InitiativePhaseStarted;
                 },
                 Err(game_err) => {
+                    debug!("Error returned from game.start_initiative_phase()");
                     let runner_err = Error {kind: ErrorKind::InvalidStateAction, message: game_err.msg};
                     response = ResponseMessage::Error(runner_err);
                 },
@@ -304,6 +307,7 @@ pub struct Error
     pub kind: ErrorKind,
 }
 
+#[derive(PartialEq)]
 pub enum ErrorKind
 {
     NoMatchingGame,
@@ -329,6 +333,7 @@ use log::debug;
     use super::AddCharacter;
     use super::ExistingGame;
     use super::ErrorKind;
+    use super::Roll;
     use super::StateChange;
 
     pub fn init() -> Sender<RequestMessage> {
@@ -345,7 +350,7 @@ use log::debug;
         return sender;
     }
 
-    pub async fn add_new_game(game_input_channel: Sender<RequestMessage>) -> Uuid
+    pub async fn add_new_game(game_input_channel: &Sender<RequestMessage>) -> Uuid
     {
         let (game_sender, game_receiver) = channel();
         let msg = RequestMessage::New(NewGame{reply_channel: game_sender});
@@ -381,9 +386,8 @@ use log::debug;
         
     }
 
-    async fn create_and_add_char(game_input_channel: Sender<RequestMessage>, game_id: Uuid) -> Uuid
+    async fn create_and_add_char(game_input_channel: &Sender<RequestMessage>, game_id: Uuid) -> Uuid
     {
-        
         let (game_sender, game_receiver) = channel::<ResponseMessage>();
 
         let character = create_character();
@@ -446,7 +450,7 @@ use log::debug;
         let (game_sender, game_receiver) = channel::<ResponseMessage>();
 
         // when I send a Delete message with one half of a oneshot channel and a game ID that really exists...
-        let game_id = add_new_game(game_input_channel.clone()).await;
+        let game_id = add_new_game(&game_input_channel).await;
 
         let msg = RequestMessage::Delete(ExistingGame{ game_id, reply_channel: game_sender});
         
@@ -470,7 +474,7 @@ use log::debug;
         let game_input_channel = init();
         let (game_sender, game_receiver) = channel::<ResponseMessage>();
 
-        add_new_game(game_input_channel.clone()).await;
+        add_new_game(&game_input_channel).await;
 
         let msg = RequestMessage::Delete(ExistingGame{ game_id: Uuid::new_v4(), reply_channel: game_sender});
         
@@ -494,7 +498,7 @@ use log::debug;
         let game_input_channel = init();
         let (game_sender, game_receiver) = channel::<ResponseMessage>();
 
-        let game_id = add_new_game(game_input_channel.clone()).await;
+        let game_id = add_new_game(&game_input_channel).await;
 
         let character = create_character();
 
@@ -519,7 +523,7 @@ use log::debug;
         let game_input_channel = init();
         let (game_sender, game_receiver) = channel::<ResponseMessage>();
 
-        let _ = add_new_game(game_input_channel.clone()).await;
+        let _ = add_new_game(&game_input_channel).await;
 
         let character = create_character();
 
@@ -545,12 +549,12 @@ use log::debug;
         let game_input_channel = init();
         let (game_sender, game_receiver) = channel::<ResponseMessage>();
 
-        let game_id = add_new_game(game_input_channel.clone()).await;
+        let game_id = add_new_game(&game_input_channel).await;
 
-        let character1 = create_and_add_char(game_input_channel.clone(), game_id).await;
-        let character2 = create_and_add_char(game_input_channel.clone(), game_id).await;
-        let character3 = create_and_add_char(game_input_channel.clone(), game_id).await;
-        let character4 = create_and_add_char(game_input_channel.clone(), game_id).await;
+        let character1 = create_and_add_char(&game_input_channel, game_id).await;
+        let character2 = create_and_add_char(&game_input_channel, game_id).await;
+        let character3 = create_and_add_char(&game_input_channel, game_id).await;
+        let character4 = create_and_add_char(&game_input_channel, game_id).await;
 
         let combatants = vec![character1, character2, character3, character4];
 
@@ -580,12 +584,12 @@ use log::debug;
         let game_input_channel = init();
         let (game_sender, game_receiver) = channel::<ResponseMessage>();
 
-        let game_id = add_new_game(game_input_channel.clone()).await;
+        let game_id = add_new_game(&game_input_channel).await;
 
-        let _character1 = create_and_add_char(game_input_channel.clone(), game_id).await;
-        let _character2 = create_and_add_char(game_input_channel.clone(), game_id).await;
-        let _character3 = create_and_add_char(game_input_channel.clone(), game_id).await;
-        let _character4 = create_and_add_char(game_input_channel.clone(), game_id).await;
+        let _character1 = create_and_add_char(&game_input_channel, game_id).await;
+        let _character2 = create_and_add_char(&game_input_channel, game_id).await;
+        let _character3 = create_and_add_char(&game_input_channel, game_id).await;
+        let _character4 = create_and_add_char(&game_input_channel, game_id).await;
 
         let combatants = vec![Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4()];
 
@@ -620,17 +624,38 @@ use log::debug;
     }
 
     #[tokio::test]
+    pub async fn start_combat_with_no_combatants()
+    {
+        let game_input_channel = init();
+        let (game_sender, game_receiver) = channel::<ResponseMessage>();
+
+        let game_id = add_new_game(&game_input_channel).await;
+
+        let _character1 = create_and_add_char(&game_input_channel, game_id).await;
+        let _character2 = create_and_add_char(&game_input_channel, game_id).await;
+        let _character3 = create_and_add_char(&game_input_channel, game_id).await;
+        let _character4 = create_and_add_char(&game_input_channel, game_id).await;
+
+        let msg = RequestMessage::StartCombat(CombatSetup{reply_channel: game_sender, game_id, combatants: Vec::<Uuid>::new()});
+
+        let response = game_input_channel.send(msg).await;
+
+        assert!(response.is_ok()); // It is entirely acceptable to start a combat with no combatants.  Individual combatants can be added later,
+        // or another batch of combatants can be added later.
+    }
+
+    #[tokio::test]
     pub async fn test_start_combat_unknown_game_id()
     {
         let game_input_channel = init();
         let (game_sender, game_receiver) = channel::<ResponseMessage>();
 
-        let game_id = add_new_game(game_input_channel.clone()).await;
+        let game_id = add_new_game(&game_input_channel).await;
 
-        let character1 = create_and_add_char(game_input_channel.clone(), game_id).await;
-        let character2 = create_and_add_char(game_input_channel.clone(), game_id).await;
-        let character3 = create_and_add_char(game_input_channel.clone(), game_id).await;
-        let character4 = create_and_add_char(game_input_channel.clone(), game_id).await;
+        let character1 = create_and_add_char(&game_input_channel, game_id).await;
+        let character2 = create_and_add_char(&game_input_channel, game_id).await;
+        let character3 = create_and_add_char(&game_input_channel, game_id).await;
+        let character4 = create_and_add_char(&game_input_channel, game_id).await;
 
         let combatants = vec![character1, character2, character3, character4];
 
@@ -663,22 +688,22 @@ use log::debug;
     }
 
     #[tokio::test]
-    pub async fn start_initiative_phase()
+    pub async fn start_initiative_round()
     {
         let game_input_channel = init();
-        let (game_sender, game_receiver) = channel::<ResponseMessage>();
+        let (game_sender, _game_receiver) = channel::<ResponseMessage>();
 
-        let game_id = add_new_game(game_input_channel.clone()).await;
+        let game_id = add_new_game(&game_input_channel).await;
 
-        let character1 = create_and_add_char(game_input_channel.clone(), game_id).await;
-        let character2 = create_and_add_char(game_input_channel.clone(), game_id).await;
-        let character3 = create_and_add_char(game_input_channel.clone(), game_id).await;
-        let character4 = create_and_add_char(game_input_channel.clone(), game_id).await;
+        let character1 = create_and_add_char(&game_input_channel, game_id).await;
+        let character2 = create_and_add_char(&game_input_channel, game_id).await;
+        let character3 = create_and_add_char(&game_input_channel, game_id).await;
+        let character4 = create_and_add_char(&game_input_channel, game_id).await;
         let combatants = vec![character1, character2, character3, character4];
 
-        let msg = RequestMessage::StartCombat(CombatSetup{reply_channel: game_sender, game_id: Uuid::new_v4(), combatants});
+        let msg = RequestMessage::StartCombat(CombatSetup{reply_channel: game_sender, game_id, combatants});
 
-        let response = game_input_channel.send(msg).await;
+        let _response = game_input_channel.send(msg).await;
 
         let (game_sender, game_receiver) = channel::<ResponseMessage>();
 
@@ -694,7 +719,7 @@ use log::debug;
                 match msg
                 {
                     ResponseMessage::InitiativePhaseStarted => {} // all is good
-                    _ => {panic!("Received an unexpected ResponseMessage.");}
+                    _ => {panic!("Received an unexpected ResponseMessage");}
                 }
             }, 
             Err(_) => {
@@ -703,4 +728,141 @@ use log::debug;
         }
         
     }
+
+    #[tokio::test]
+    pub async fn start_initiative_round_no_combatants()
+    {
+        let game_input_channel = init();
+        let (game_sender, _game_receiver ) = channel::<ResponseMessage>();
+
+        let game_id = add_new_game(&game_input_channel).await;
+
+        let _character1 = create_and_add_char(&game_input_channel, game_id).await;
+        let _character2 = create_and_add_char(&game_input_channel, game_id).await;
+        let _character3 = create_and_add_char(&game_input_channel, game_id).await;
+
+        let msg = RequestMessage::StartCombat(CombatSetup{reply_channel: game_sender, game_id, combatants: Vec::<Uuid>::new()});
+
+        let _response = game_input_channel.send(msg).await;
+
+        let (game_sender, game_receiver) = channel::<ResponseMessage>();
+
+        let msg = RequestMessage::BeginInitiativePhase(StateChange{game_id, reply_channel:game_sender});
+
+        let response = game_input_channel.send(msg).await;
+
+        assert!(response.is_ok());
+
+        match game_receiver.await
+        {
+            Ok(msg) => {
+                match msg
+                {
+                    ResponseMessage::Error(kind) => {
+                        if kind.kind != ErrorKind::InvalidStateAction
+                        {
+                            panic!("Expected InvalidStateAction error type to signify no characters in the combat set.");
+                        }
+                    } // This is correct
+                    _ => {panic!("Expected an error when starting initiative round with no combatants - received non-error result!")}
+                }
+            },
+            Err(_) => {
+                panic!("Receiver channel errored.")
+            }
+        }
+    }
+
+    #[tokio::test]
+    pub async fn add_one_initiative_roll()
+    {
+        let game_input_channel = init();
+        let (game_sender, _game_receiver) = channel::<ResponseMessage>();
+
+        let game_id = add_new_game(&game_input_channel).await;
+
+        let character1 = create_and_add_char(&game_input_channel, game_id).await;
+        let character2 = create_and_add_char(&game_input_channel, game_id).await;
+
+        let msg = RequestMessage::StartCombat(CombatSetup{reply_channel: game_sender, game_id, combatants: vec![character1, character2]});
+
+        assert!(game_input_channel.send(msg).await.is_ok());
+
+        let (game_sender, _game_receiver) = channel::<ResponseMessage>();
+        let msg = RequestMessage::BeginInitiativePhase(StateChange{game_id, reply_channel: game_sender});
+        assert!(game_input_channel.send(msg).await.is_ok());
+
+        let (game_sender, game_receiver) = channel::<ResponseMessage>();
+        let roll: Roll = Roll{ reply_channel: game_sender, game_id, character_id: character1, roll: 13 };
+        let msg = RequestMessage::AddInitiativeRoll(roll);
+        assert!(game_input_channel.send(msg).await.is_ok());
+
+        match game_receiver.await
+        {
+            Ok(response) => {
+                match response
+                {
+                    ResponseMessage::InitiativeRollAdded => {},
+                    _ => {
+                        panic!("Unexpected ResponseMessage - should have been InitiativeRollAdded.")
+                    }
+                }
+            },
+            Err(_) => {
+                panic!("The oneshot channel errored out before the GameRunner could send a response.");
+            } 
+        }
+
+    }
+
+    #[tokio::test]
+    pub async fn add_all_init_rolls()
+    {
+        let game_input_channel = init();
+        let (game_sender, _game_receiver) = channel::<ResponseMessage>();
+
+        let game_id = add_new_game(&game_input_channel).await;
+
+        let character1 = create_and_add_char(&game_input_channel, game_id).await;
+        let character2 = create_and_add_char(&game_input_channel, game_id).await;
+        let character3 = create_and_add_char(&game_input_channel, game_id).await;
+        let character4 = create_and_add_char(&game_input_channel, game_id).await;
+        let combatants = vec![character1, character2, character3, character4];
+
+        let msg = RequestMessage::StartCombat
+            (CombatSetup{reply_channel: game_sender, game_id, combatants: combatants.clone()});
+
+        assert!(game_input_channel.send(msg).await.is_ok());
+
+        let (game_sender, _game_receiver) = channel::<ResponseMessage>();
+        let msg = RequestMessage::BeginInitiativePhase(StateChange{game_id, reply_channel: game_sender});
+        assert!(game_input_channel.send(msg).await.is_ok());
+
+        for character_id in combatants
+        {
+            let (game_sender, game_receiver) = channel::<ResponseMessage>();
+            let roll: Roll = Roll{ reply_channel: game_sender, game_id, character_id, roll: 13 };
+            let msg = RequestMessage::AddInitiativeRoll(roll);
+            assert!(game_input_channel.send(msg).await.is_ok());
+    
+            match game_receiver.await
+            {
+                Ok(response) => {
+                    match response
+                    {
+                        ResponseMessage::InitiativeRollAdded => {},
+                        _ => {
+                            panic!("Unexpected ResponseMessage - should have been InitiativeRollAdded.")
+                        }
+                    }
+                },
+                Err(_) => {
+                    panic!("The oneshot channel errored out before the GameRunner could send a response.");
+                } 
+            } 
+        }
+
+    }
+
+    
 }
