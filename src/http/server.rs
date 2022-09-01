@@ -5,7 +5,7 @@ use tokio::sync::{mpsc::Sender, oneshot::channel};
 use tokio::sync::oneshot::Receiver as OneShotReceiver;
 use uuid::Uuid;
 
-use crate::{gamerunner::{RequestMessage, ResponseMessage, NewGame, AddCharacter, CombatSetup, Roll, StateChange}, http::api::{NewGameJson, InitiativeRoll},};
+use crate::{gamerunner::{RequestMessage, ResponseMessage, NewGame, AddCharacter, CombatSetup, Roll, SimpleMessage}, http::api::{NewGameJson, InitiativeRoll},};
 
 use super::api::{Character, AddedCharacterJson, NewState, BeginCombat};
 
@@ -118,9 +118,9 @@ pub async fn change_game_state(id: Uuid, new_state: Json<NewState>, state: &Stat
             msg = RequestMessage::StartCombat(CombatSetup { reply_channel: game_sender, game_id: id, combatants: combat_data.participants.clone() });
         },
         super::api::State::InitiativeRolls => {
-            msg = RequestMessage::BeginInitiativePhase(StateChange{reply_channel: game_sender, game_id: id});
+            msg = RequestMessage::BeginInitiativePhase(SimpleMessage{reply_channel: game_sender, game_id: id});
         },
-        super::api::State::InitiativePass => {msg = RequestMessage::StartInitiativePass},
+        super::api::State::InitiativePass => {msg = RequestMessage::StartCombatRound(SimpleMessage{reply_channel: game_sender, game_id: id})},
         super::api::State::EndOfTurn => {msg = RequestMessage::BeginEndOfTurn},
     }
 

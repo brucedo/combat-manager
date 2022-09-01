@@ -273,7 +273,7 @@ impl Game {
         Ok(())
     }
 
-    pub fn start_initiative_rounds(self: &mut Game) -> Result<(), GameError>
+    pub fn start_combat_rounds(self: &mut Game) -> Result<(), GameError>
     {
         for combatant in self.combatant_data.values()
         {
@@ -753,7 +753,7 @@ mod tests
         assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 12).is_ok());
         assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 12).is_ok());
 
-        assert!(game.start_initiative_rounds().is_ok());
+        assert!(game.start_combat_rounds().is_ok());
 
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Complex).is_ok());
 
@@ -780,7 +780,7 @@ mod tests
         assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 12).is_ok());
         assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 12).is_ok());
 
-        assert!(game.start_initiative_rounds().is_ok());
+        assert!(game.start_combat_rounds().is_ok());
 
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Complex).is_ok());
         assert!(game.take_action(*ids.get(2).unwrap(), ActionType::Complex).is_ok());
@@ -827,7 +827,7 @@ mod tests
         assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 12).is_ok());
         assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 12).is_ok());
 
-        assert!(game.start_initiative_rounds().is_ok());
+        assert!(game.start_combat_rounds().is_ok());
 
         let option = game.on_deck();
         assert_ne!(None, option);
@@ -869,7 +869,7 @@ mod tests
         assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 12).is_ok());
         assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 12).is_ok());
 
-        assert!(game.start_initiative_rounds().is_ok());
+        assert!(game.start_combat_rounds().is_ok());
 
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Complex).is_ok());
         assert!(game.take_action(*ids.get(2).unwrap(), ActionType::Complex).is_ok());
@@ -961,7 +961,7 @@ mod tests
         assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 22).is_ok());
         assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 14).is_ok());
 
-        assert!(game.start_initiative_rounds().is_ok());
+        assert!(game.start_combat_rounds().is_ok());
 
         assert_eq!(game.get_combatants().len(), 3);
 
@@ -1078,7 +1078,7 @@ mod tests
         assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 13).is_ok());
     
         // transition into InitiativePass
-        assert!(game.start_initiative_rounds().is_ok());
+        assert!(game.start_combat_rounds().is_ok());
 
         // now try to jump right back to initiative roll
         assert!(game.start_initiative_phase().is_ok());
@@ -1187,7 +1187,7 @@ mod tests
         assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 8).is_ok());
         assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 3).is_ok());
 
-        let result = game.start_initiative_rounds();
+        let result = game.start_combat_rounds();
 
         assert_eq!(game.current_state(), String::from("Initiative Pass"));
         assert!(result.is_ok());
@@ -1210,7 +1210,7 @@ mod tests
         assert!(game.accept_initiative_roll(*ids.get(0).unwrap(), 1).is_ok());
         assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 15).is_ok());
 
-        let result = game.start_initiative_rounds();
+        let result = game.start_combat_rounds();
 
         assert_eq!(game.current_state(), String::from("Initiative Rolls"));
         assert!(result.is_err());
@@ -1232,7 +1232,7 @@ mod tests
         assert!(game.accept_initiative_roll(*ids.get(0).unwrap(), 23).is_ok());
         assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 20).is_ok());
         assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 33).is_ok());
-        assert!(game.start_initiative_rounds().is_ok());
+        assert!(game.start_combat_rounds().is_ok());
         
         // Attempting to advance to the next initiative pass should result in failure.
         let result = game.next_initiative_pass();
@@ -1256,7 +1256,7 @@ mod tests
         assert!(game.accept_initiative_roll(*ids.get(0).unwrap(), 23).is_ok());
         assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 20).is_ok());
         assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 33).is_ok());
-        assert!(game.start_initiative_rounds().is_ok());
+        assert!(game.start_combat_rounds().is_ok());
 
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Complex).is_ok());
         assert!(game.next_initiative().is_ok());
@@ -1304,7 +1304,7 @@ mod tests
         assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 20).is_ok());
         assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 33).is_ok());
 
-        assert!(game.start_initiative_rounds().is_ok());
+        assert!(game.start_combat_rounds().is_ok());
 
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Complex).is_ok());
         assert!(game.next_initiative().is_ok());
@@ -1332,7 +1332,7 @@ mod tests
         assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 20).is_ok());
         assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 33).is_ok());
 
-        assert!(game.start_initiative_rounds().is_ok());
+        assert!(game.start_combat_rounds().is_ok());
 
         assert!(game.next_initiative().is_err());
 
@@ -1360,7 +1360,7 @@ mod tests
         assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 20).is_ok());
         assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 33).is_ok());
 
-        assert!(game.start_initiative_rounds().is_ok());
+        assert!(game.start_combat_rounds().is_ok());
 
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Simple).is_ok());
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Complex).is_err());
@@ -1387,7 +1387,7 @@ mod tests
         assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 20).is_ok());
         assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 33).is_ok());
 
-        assert!(game.start_initiative_rounds().is_ok());
+        assert!(game.start_combat_rounds().is_ok());
 
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Complex).is_ok());
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Simple).is_err());
@@ -1412,7 +1412,7 @@ mod tests
         assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 20).is_ok());
         assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 33).is_ok());
 
-        assert!(game.start_initiative_rounds().is_ok());
+        assert!(game.start_combat_rounds().is_ok());
 
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Free).is_ok());
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Simple).is_ok());
@@ -1437,7 +1437,7 @@ mod tests
         assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 20).is_ok());
         assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 33).is_ok());
 
-        assert!(game.start_initiative_rounds().is_ok());
+        assert!(game.start_combat_rounds().is_ok());
 
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Free).is_ok());
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Complex).is_ok());
@@ -1461,7 +1461,7 @@ mod tests
         assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 20).is_ok());
         assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 33).is_ok());
 
-        assert!(game.start_initiative_rounds().is_ok());
+        assert!(game.start_combat_rounds().is_ok());
 
         assert!(game.take_action(*ids.get(2).unwrap(), ActionType::Free).is_ok());
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Simple).is_ok());
@@ -1486,7 +1486,7 @@ mod tests
         assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 20).is_ok());
         assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 33).is_ok());
 
-        assert!(game.start_initiative_rounds().is_ok());
+        assert!(game.start_combat_rounds().is_ok());
 
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Free).is_ok());
         assert!(game.take_action(*ids.get(2).unwrap(), ActionType::Simple).is_err());
@@ -1511,7 +1511,7 @@ mod tests
         assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 20).is_ok());
         assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 33).is_ok());
 
-        assert!(game.start_initiative_rounds().is_ok());
+        assert!(game.start_combat_rounds().is_ok());
 
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Free).is_ok());
         assert!(game.take_action(*ids.get(2).unwrap(), ActionType::Complex).is_err());
