@@ -96,7 +96,7 @@ impl Game {
 
     pub fn waiting_for(self: &mut Game)->Option<Vec<Uuid>>
     {
-        if self.current_state != State::InitiativePass
+        if self.current_state != State::ActionRound
         {
             return Option::None;
         }
@@ -128,7 +128,7 @@ impl Game {
 
     pub fn on_deck(self: &Game) -> Option<Vec<Uuid>>
     {
-        if self.current_state != State::InitiativePass
+        if self.current_state != State::ActionRound
         {
             return None;
         }
@@ -218,7 +218,7 @@ impl Game {
     pub fn start_initiative_phase(self: &mut Game) -> Result<(), GameError>
     {
         debug!("Starting initiative.");
-        if self.current_state != State::PreCombat && self.current_state != State::InitiativePass
+        if self.current_state != State::PreCombat && self.current_state != State::ActionRound
         {
             debug!("Current state of game {} is not allowed to transition into Initiative.", self.current_state.to_string());
             return Err(GameError::new
@@ -239,6 +239,33 @@ impl Game {
         self.current_state = State::Initiative;
 
         Ok(())
+    }
+
+    pub fn are_any_initiatives_outstanding(self: &mut Game) -> bool
+    {
+        for combatant in (&self.combatant_data).values() {
+            if !combatant.declared_initiative
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    pub fn collect_undeclared_initiatives(self: &mut Game) -> Vec<Uuid>
+    {
+        let mut undeclared = Vec::<Uuid>::new();
+
+        for (id, combatant) in &self.combatant_data
+        {
+            if !combatant.declared_initiative
+            {
+                undeclared.push(*id);
+            }
+        }
+
+        return undeclared;
     }
 
     pub fn accept_initiative_roll(self: &mut Game, character_id: Uuid, initiative: i8) -> Result<(), GameError>
@@ -275,6 +302,14 @@ impl Game {
 
     pub fn start_combat_rounds(self: &mut Game) -> Result<(), GameError>
     {
+        if self.current_state != State::Initiative
+        {
+            return Err(GameError::new(
+                ErrorKind::InvalidStateAction,
+                String::from("Not in the initiative state.  Cannot advance to combat.")
+            ));
+        }
+
         for combatant in self.combatant_data.values()
         {
             if !combatant.declared_initiative
@@ -287,7 +322,7 @@ impl Game {
         }
 
         self.initialize_initiatives()?;
-        self.current_state = State::InitiativePass;
+        self.current_state = State::ActionRound;
 
         return Ok(()); 
     }
@@ -338,7 +373,7 @@ impl Game {
 
     pub fn next_initiative_pass(self: &mut Game) -> Result<(), GameError>
     {
-        if self.current_state != State::InitiativePass
+        if self.current_state != State::ActionRound
         {
             return Err(GameError{
                 kind: ErrorKind::InvalidStateAction,
@@ -375,7 +410,7 @@ impl Game {
 
     pub fn next_initiative(self: &mut Game) -> Result<(), GameError>
     {
-        if self.current_state != State::InitiativePass
+        if self.current_state != State::ActionRound
         {
             return Err(GameError{
                 kind: ErrorKind::InvalidStateAction,
@@ -432,7 +467,7 @@ impl Game {
     pub fn take_action(self: &mut Game, actor: Uuid, action_type: ActionType) -> Result<(), GameError>
     {
 
-        if self.current_state != State::InitiativePass
+        if self.current_state != State::ActionRound
         {
             return Err(GameError::new(ErrorKind::InvalidStateAction, String::from(format!("The game is not in the character turn phase.  You cannot take an action."))));
         }
@@ -600,7 +635,7 @@ impl CharacterCombatData {
 enum State {
     PreCombat,
     Initiative,
-    InitiativePass,
+    ActionRound,
     PostRound,
     Other,
 }
@@ -611,7 +646,7 @@ impl State {
         match self {
             State::PreCombat => String::from("PreCombat"),
             State::Initiative => String::from("Initiative Rolls"),
-            State::InitiativePass => String::from("Initiative Pass"),
+            State::ActionRound => String::from("Initiative Pass"),
             State::PostRound => String::from("End Of Round"),
             State::Other => String::from("Other"),
         }
@@ -1167,7 +1202,34 @@ mod tests
         assert!(result.is_err());
     }
 
+    #[test]
+    pub fn query_initiative_state()
+    {
+        init();
 
+        let zorc = build_orc();
+        let mork = build_dwarf();
+
+        let mut game = Game::new();
+        let ids = populate!(&mut game, zorc, mork);
+        assert!(game.start_initiative_phase().is_ok());
+
+        assert!(game.are_any_initiatives_outstanding());
+        assert!(game.collect_undeclared_initiatives().len() == 2);
+        assert!(game.collect_undeclared_initiatives().contains(ids.get(0).unwrap()));
+        assert!(game.collect_undeclared_initiatives().contains(ids.get(1).unwrap()));
+
+        let result = game.accept_initiative_roll(*ids.get(0).unwrap(), 23);
+
+        assert!(game.are_any_initiatives_outstanding());
+        assert!(game.collect_undeclared_initiatives().len() == 1);
+        assert!(game.collect_undeclared_initiatives().contains(ids.get(1).unwrap()));
+        assert!(!game.collect_undeclared_initiatives().contains(ids.get(0).unwrap()));
+
+        let result = game.accept_initiative_roll(*ids.get(1).unwrap(), 12);
+        assert!(!game.are_any_initiatives_outstanding());
+        assert!(game.collect_undeclared_initiatives().len() == 0);
+    }
 
     #[test]
     pub fn begin_initiative()

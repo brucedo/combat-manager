@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use log::{debug, error};
-use rocket::serde::json::serde_json::map::OccupiedEntry;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::oneshot::Sender;
 use uuid::Uuid;
@@ -284,6 +283,7 @@ pub enum RequestMessage
     StartCombat(CombatSetup),
     AddInitiativeRoll(Roll),
     BeginInitiativePhase(SimpleMessage),
+    QueryInitiativePhase(SimpleMessage),
     StartCombatRound(SimpleMessage),
     BeginEndOfTurn,
 }
@@ -297,6 +297,7 @@ pub enum ResponseMessage
     CombatStarted,
     InitiativePhaseStarted,
     InitiativeRollAdded,
+    InitiativeStatus(InitiativeState),
     CombatRoundStarted,
 }
 
@@ -316,6 +317,12 @@ pub struct CombatSetup
     pub reply_channel: tokio::sync::oneshot::Sender<ResponseMessage>,
     pub game_id: Uuid,
     pub combatants: Vec<Uuid>,
+}
+
+pub struct InitiativeState
+{
+    pub waiting: bool,
+    pub remaining: Vec<Uuid>
 }
 
 pub struct AddCharacter
@@ -927,7 +934,7 @@ use log::debug;
     }
 
     #[tokio::test]
-    pub async fn leave_initiative_rolls_early()
+    pub async fn start_action_phase_before_all_inits_in()
     {
         let (game_input_channel, game_id, combatants) = construct_combat_ready_game().await;
 
@@ -942,7 +949,8 @@ use log::debug;
 
         match game_receiver.await
         {
-            Ok(response) => {
+            Ok(response) => 
+            {
                 match response
                 {
                     ResponseMessage::Error(_) => {},
@@ -953,5 +961,72 @@ use log::debug;
         }
     }
 
+
+    #[tokio::test]
+    pub async fn start_action_phase_with_fresh_game()
+    {
+        // let (game_input_channel, game_receiver) = tokio::sync::mpsc::channel(10);
+        let game_input_channel = init();
+        let game_id: Uuid;
+        let (game_sender, game_receiver) = channel();
+        let msg = RequestMessage::New(NewGame{ reply_channel: game_sender });
+
+        assert!(game_input_channel.send(msg).await.is_ok());
+        match game_receiver.await
+        {
+            Ok(response) => 
+            {
+                match response
+                {
+                    ResponseMessage::Created(id) => {game_id = id},
+                    _ => {panic!("Failure creating game.")}
+                }
+            },
+            Err(_) => panic!("Receiver errored waiting for game creation."),
+        }
+
+        let (game_sender, game_receiver) = channel();
+        let msg = RequestMessage::StartCombatRound(SimpleMessage{ reply_channel: game_sender, game_id });
+
+        assert!(game_input_channel.send(msg).await.is_ok());
+
+        match game_receiver.await
+        {
+            Ok(response) => 
+            {
+                match response
+                {
+                    ResponseMessage::Error(_) => {},
+                    _ => {panic!("Non-error response returned.");}
+                }
+            },
+            Err(_) => panic!(),
+        }
+
+    }
+
+    #[tokio::test]
+    pub async fn start_action_after_declaring_combat()
+    {
+        let (game_input_channel, game_id, combatants) = construct_combat_ready_game().await;
+
+        let (game_sender, game_receiver) = channel::<ResponseMessage>();
+        let msg = RequestMessage::StartCombatRound(SimpleMessage{ reply_channel: game_sender, game_id });
+
+        assert!(game_input_channel.send(msg).await.is_ok());
+
+        match game_receiver.await
+        {
+            Ok(response) => 
+            {
+                match response
+                {
+                    ResponseMessage::Error(_) => {},
+                    _ => {panic!("Non-error message as response.")}
+                }
+            },
+            Err(_) => {panic!("One shot channel panicked awaiting message.");},
+        }
+    }
     
 }
