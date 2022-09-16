@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, process::Output};
 
 use log::{debug, error};
 use tokio::sync::mpsc::Receiver;
@@ -32,15 +32,25 @@ pub async fn game_runner(mut message_queue: Receiver<RequestMessage>)
             }
             RequestMessage::AddCharacter(character_data) => {
                 debug!("Request is to add a new character.");
-                (channel, response) = add_character(character_data, &mut running_games);
+                channel = character_data.reply_channel;
+                let character = character_data.character;
+                response = find_game_and_act(&mut running_games, character_data.game_id, | game | {add_character(character, game)});
+                // (channel, response) = add_character(character_data, &mut running_games);
             },
             RequestMessage::StartCombat(details) => {
                 debug!("Request is to start the combat phase.");
-                (channel, response) = start_combat(details, &mut running_games);
+                channel = details.reply_channel;
+                let combatants = details.combatants;
+                response = find_game_and_act(&mut running_games, details.game_id, | game | {start_combat(combatants, game)})
+                // (channel, response) = start_combat(details, &mut running_games);
             },
             RequestMessage::AddInitiativeRoll(roll) => {
                 debug!("Request is to add an initiative roll.");
-                (channel, response) = add_init_roll(roll, &mut running_games);
+                channel = roll.reply_channel;
+                let character_id = roll.character_id;
+                let initiative_value = roll.roll;
+                // (channel, response) = add_init_roll(roll, &mut running_games);
+                response = find_game_and_act(&mut running_games, roll.game_id, | game | { add_init_roll(character_id, initiative_value, game)});
             },
             RequestMessage::BeginInitiativePhase(game_data) => {
                 debug!("Request is to begin the initiative phase.");
@@ -49,6 +59,13 @@ pub async fn game_runner(mut message_queue: Receiver<RequestMessage>)
             RequestMessage::StartCombatRound(msg) => {
                 debug!("Request is to begin a combat round.");
                 (channel, response) = try_begin_combat(msg, &mut running_games)
+            },
+            RequestMessage::AdvanceTurn(msg) => {
+                debug!("Request is to advance to the next event in the pass.");
+                let id = msg.game_id;
+                channel = msg.reply_channel;
+                // let response = find_game_and_act(&mut running_games, id, | game | {return try_advance_turn(msg, game)});
+                response = find_game_and_act(&mut running_games, id, try_advance_turn);
             }
             _ => { todo!()}
         }
@@ -89,65 +106,45 @@ fn end_game(game_details: ExistingGame, running_games: &mut HashMap<Uuid, Game>)
     return (channel, response);
 }
 
-fn add_character(character: AddCharacter, running_games: &mut HashMap<Uuid, Game>) -> (Sender<ResponseMessage>, ResponseMessage)
+fn add_character(character: Character, game: &mut Game) -> ResponseMessage
 {
-    let channel = character.reply_channel;
     let response: ResponseMessage;
 
-    match running_games.entry(character.game_id)
-    {
-        std::collections::hash_map::Entry::Occupied(mut entry) => {
-            let game = entry.get_mut();
+    let char_id = game.add_cast_member(character);
+    return ResponseMessage::CharacterAdded(char_id);
 
-            let char_id = game.add_cast_member(character.character);
-            response = ResponseMessage::CharacterAdded(char_id);
-        },
-        std::collections::hash_map::Entry::Vacant(_) => response = game_not_found(character.game_id),
-    }
-
-    return (channel, response);
 }
 
-fn start_combat(details: CombatSetup, running_games: &mut HashMap<Uuid, Game>) -> (Sender<ResponseMessage>, ResponseMessage)
+// fn start_combat(details: CombatSetup, running_games: &mut HashMap<Uuid, Game>) -> (Sender<ResponseMessage>, ResponseMessage)
+fn start_combat(combatants: Vec<Uuid>, game: &mut Game) -> ResponseMessage
 {
 
-    let channel = details.reply_channel;
     let response: ResponseMessage;
 
-    match running_games.entry(details.game_id)
+    if let Err(result) = game.add_combatants(combatants)
     {
-        std::collections::hash_map::Entry::Occupied(mut entry) => {
-            let game = entry.get_mut();
-
-            if let Err(result) = game.add_combatants(details.combatants)
-            {
-                match result.kind
-                {
-                    crate::tracker::game::ErrorKind::UnknownCastId => {
-                        response = ResponseMessage::Error
-                        (
-                            Error 
-                            { 
-                                message: String::from(format!("Character ID does not exist: {}", result.msg)), 
-                                kind: ErrorKind::NoSuchCharacter 
-                            }
-                        );
-                    },
-                    _ => {unreachable!()},
-                }
-            }
-            else 
-            {
-                response = ResponseMessage::CombatStarted;
-            }
-            
-        },
-        std::collections::hash_map::Entry::Vacant(_) => {
-            response = game_not_found(details.game_id);
-        },
+        match result.kind
+        {
+            crate::tracker::game::ErrorKind::UnknownCastId => {
+                response = ResponseMessage::Error
+                (
+                    Error 
+                    { 
+                        message: result.msg, 
+                        kind: ErrorKind::NoSuchCharacter 
+                    }
+                );
+            },
+            _ => {unreachable!()},
+        }
+    }
+    else 
+    {
+        response = ResponseMessage::CombatStarted;
     }
 
-    return (channel, response);
+    return response;
+
 }
 
 fn try_initiative_phase(game_data: SimpleMessage, running_games: &mut HashMap<Uuid, Game>) -> (Sender<ResponseMessage>, ResponseMessage)
@@ -179,52 +176,53 @@ fn try_initiative_phase(game_data: SimpleMessage, running_games: &mut HashMap<Uu
     return (channel, response);
 }
 
-fn add_init_roll(roll: Roll, running_games: &mut HashMap<Uuid, Game>) -> (Sender<ResponseMessage>, ResponseMessage)
+fn add_init_roll(character_id: Uuid, roll: i8, game: &mut Game) -> ResponseMessage
 {
-    let channel = roll.reply_channel;
+    // let channel = roll.reply_channel;
     let response: ResponseMessage;
 
-    match running_games.entry(roll.game_id)
+    // match running_games.entry(roll.game_id)
+    // {
+    //     std::collections::hash_map::Entry::Occupied(mut entry) => {
+    //         let game = entry.get_mut();
+
+    if let Err(result) = game.accept_initiative_roll(character_id, roll)
     {
-        std::collections::hash_map::Entry::Occupied(mut entry) => {
-            let game = entry.get_mut();
-
-            if let Err(result) = game.accept_initiative_roll(roll.character_id, roll.roll)
-            {
-                match result.kind
-                {
-                    crate::tracker::game::ErrorKind::InvalidStateAction => {
-                        response = ResponseMessage::Error
-                        (
-                            Error 
-                            { 
-                                message: String::from(format!("The game is not in the correct state to take initiative rolls.")), 
-                                kind: ErrorKind::InvalidStateAction 
-                            }
-                        );
-                    },
-                    crate::tracker::game::ErrorKind::NoCombatants => {
-                        response = ResponseMessage::Error
-                        (
-                            Error 
-                            { 
-                                message: String::from(format!("Character ID does not exist: {}", result.msg)), 
-                                kind: ErrorKind::NoMatchingGame 
-                            }
-                        );
-                    },
-                    _ => {unreachable!()},
-                }
-            }
-            else
-            {
-                response = ResponseMessage::InitiativeRollAdded;
-            }
-        },
-        std::collections::hash_map::Entry::Vacant(_) => response = game_not_found(roll.game_id),
+        match result.kind
+        {
+            crate::tracker::game::ErrorKind::InvalidStateAction => {
+                response = ResponseMessage::Error
+                (
+                    Error 
+                    { 
+                        message: String::from(format!("The game is not in the correct state to take initiative rolls.")), 
+                        kind: ErrorKind::InvalidStateAction 
+                    }
+                );
+            },
+            crate::tracker::game::ErrorKind::NoCombatants => {
+                response = ResponseMessage::Error
+                (
+                    Error 
+                    { 
+                        message: String::from(format!("Character ID does not exist: {}", result.msg)), 
+                        kind: ErrorKind::NoMatchingGame 
+                    }
+                );
+            },
+            _ => {unreachable!()},
+        }
     }
+    else
+    {
+        response = ResponseMessage::InitiativeRollAdded;
+    }
+    //     },
+    //     std::collections::hash_map::Entry::Vacant(_) => response = game_not_found(roll.game_id),
+    // }
 
-    return (channel, response);
+    // return (channel, response);
+    return response;
 
 }
 
@@ -263,6 +261,54 @@ fn try_begin_combat(msg: SimpleMessage, running_games: &mut HashMap<Uuid, Game>)
     return (reply_channel, response);
 }
 
+pub fn try_advance_turn(game: &mut Game) -> ResponseMessage
+{
+    let response: ResponseMessage;
+
+    if let Err(err) = game.next_initiative()
+    {
+        match err.kind
+        {
+            crate::tracker::game::ErrorKind::InvalidStateAction => 
+            {
+                response = ResponseMessage::Error(Error{message: err.msg, kind: ErrorKind::InvalidStateAction});
+            },
+            crate::tracker::game::ErrorKind::UnresolvedCombatant => 
+            {
+                response = ResponseMessage::Error(Error{message: err.msg, kind: ErrorKind::CannotAdvanceTurn})
+            },
+            _ => {unreachable!("Should not receive any other error from stepping the initiative forward.")}
+        }
+    }
+    else
+    {
+        let mut up = match game.waiting_for(){ Some(filled) => filled, None => Vec::<Uuid>::new() };
+        let mut on_deck = match game.on_deck(){ Some(filled) => filled, None => Vec::<Uuid>::new() };
+
+        response = ResponseMessage::TurnAdvanced(TurnAdvanced{ up: up, on_deck: on_deck });
+    }
+
+    return response;
+}
+
+fn find_game_and_act<F>(running_games: &mut HashMap<Uuid, Game>, game_id: Uuid, action: F) -> ResponseMessage
+where
+    F: FnOnce(&mut Game) -> ResponseMessage
+{
+    let response: ResponseMessage;
+
+    match running_games.entry(game_id)
+    {
+        std::collections::hash_map::Entry::Occupied(mut game) => 
+        {
+            response = action(game.get_mut());
+        },
+        std::collections::hash_map::Entry::Vacant(_) => {response = game_not_found(game_id)},
+    }
+
+    return response;
+}
+
 fn game_not_found(id: Uuid) -> ResponseMessage
 {
     ResponseMessage::Error
@@ -285,6 +331,7 @@ pub enum RequestMessage
     BeginInitiativePhase(SimpleMessage),
     QueryInitiativePhase(SimpleMessage),
     StartCombatRound(SimpleMessage),
+    AdvanceTurn(SimpleMessage),
     BeginEndOfTurn,
 }
 
@@ -299,6 +346,7 @@ pub enum ResponseMessage
     InitiativeRollAdded,
     InitiativeStatus(InitiativeState),
     CombatRoundStarted,
+    TurnAdvanced(TurnAdvanced)
 }
 
 pub struct NewGame
@@ -352,12 +400,19 @@ pub struct Error
     pub kind: ErrorKind,
 }
 
+pub struct TurnAdvanced
+{
+    pub up: Vec<Uuid>,
+    pub on_deck: Vec<Uuid>,
+}
+
 #[derive(PartialEq)]
 pub enum ErrorKind
 {
     NoMatchingGame,
     NoSuchCharacter,
     InvalidStateAction,
+    CannotAdvanceTurn,
 }
 
 #[cfg(test)]
@@ -1047,7 +1102,7 @@ use log::debug;
     }
     
     #[tokio::test]
-    pub async fn begin_initiative_message_will_only_be_accepted_if_game_in_combat_phase_with_registered_combatants_or_action_round()
+    pub async fn begin_initiative_message_will_only_be_accepted_if_game_in_combat_phase_with_registered_combatants_or_action_round_ended()
     {
         let game_input_channel = init();
         let (game_sender, game_receiver) = channel::<ResponseMessage>();
