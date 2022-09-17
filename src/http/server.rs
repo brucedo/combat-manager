@@ -5,19 +5,20 @@ use tokio::sync::{mpsc::Sender, oneshot::channel};
 use tokio::sync::oneshot::Receiver as OneShotReceiver;
 use uuid::Uuid;
 
-use crate::{gamerunner::{RequestMessage, ResponseMessage, NewGame, AddCharacter, CombatSetup, Roll, SimpleMessage}, http::api::{NewGameJson, InitiativeRoll},};
+use crate::{gamerunner::{RequestMessage, ResponseMessage, NewGame, AddCharacter, CombatSetup, Roll, SimpleMessage, Message}, http::api::{NewGameJson, InitiativeRoll},};
 
 use super::api::{Character, AddedCharacterJson, NewState, BeginCombat};
 
 
 #[post("/api/game/new")]
-pub async fn new_game(state: &State<Sender<RequestMessage>>) -> Result<Json<NewGameJson>, (Status, String)>
+pub async fn new_game(state: &State<Sender<Message>>) -> Result<Json<NewGameJson>, (Status, String)>
 {
     debug!("Request received to generate new game.");
     let msg_channel = state.inner().clone();
 
     let (runner_sender, response_channel) = channel::<ResponseMessage>();
-    let msg = RequestMessage::New(NewGame{reply_channel: runner_sender});
+    // let msg = RequestMessage::New(NewGame{reply_channel: runner_sender});
+    let msg = Message { game_id: Uuid::new_v4(), reply_channel: runner_sender, msg: RequestMessage::New };
 
     match do_send(msg, msg_channel, response_channel).await
     {
@@ -69,7 +70,7 @@ pub fn get_state_demo() -> Json<NewState>
 }
 
 #[post("/api/<id>/character", data = "<character>")]
-pub async fn add_new_character(id: Uuid, character: Json<Character<'_>>, state: &State<Sender<RequestMessage>>) -> 
+pub async fn add_new_character(id: Uuid, character: Json<Character<'_>>, state: &State<Sender<Message>>) -> 
     Result<Json<AddedCharacterJson>, (Status, String)>
 {
     debug!("Received request to add a character to a game.");
@@ -81,7 +82,8 @@ pub async fn add_new_character(id: Uuid, character: Json<Character<'_>>, state: 
     // TODO: Fix this up proper like.
     // let char_id = game_char.id.clone();
 
-    let msg = RequestMessage::AddCharacter(AddCharacter{reply_channel: request, game_id: id, character: game_char});
+    // let msg = RequestMessage::AddCharacter(AddCharacter{reply_channel: request, game_id: id, character: game_char});
+    let msg = Message{ game_id: id, reply_channel: request, msg: RequestMessage::AddCharacter(game_char) };
 
     match do_send(msg, msg_channel, response_channel).await
     {
@@ -105,24 +107,31 @@ pub async fn add_new_character(id: Uuid, character: Json<Character<'_>>, state: 
 }
 
 #[put("/api/<id>/state", data = "<new_state>")]
-pub async fn change_game_state(id: Uuid, new_state: Json<NewState>, state: &State<Sender<RequestMessage>>) -> 
+pub async fn change_game_state(id: Uuid, new_state: Json<NewState>, state: &State<Sender<Message>>) -> 
     Result<(Status, (ContentType, ())), (Status, String)>
 {
     let (game_sender, game_receiver) = channel::<ResponseMessage>();
     let msg_channel = state.inner().clone();
-    let msg: RequestMessage;
+    let msg: Message;
 
-    match &new_state.to_state
+    msg = match &new_state.to_state
     {
         super::api::State::Combat(combat_data) => {
-            msg = RequestMessage::StartCombat(CombatSetup { reply_channel: game_sender, game_id: id, combatants: combat_data.participants.clone() });
+            // msg = RequestMessage::StartCombat(CombatSetup { reply_channel: game_sender, game_id: id, combatants: combat_data.participants.clone() });
+            Message{ game_id: id, reply_channel: game_sender, msg: RequestMessage::StartCombat(combat_data.participants.clone()) }
+            
         },
         super::api::State::InitiativeRolls => {
-            msg = RequestMessage::BeginInitiativePhase(SimpleMessage{reply_channel: game_sender, game_id: id});
+            // RequestMessage::BeginInitiativePhase(SimpleMessage{reply_channel: game_sender, game_id: id})
+            Message { game_id: id, reply_channel: game_sender, msg: RequestMessage::BeginInitiativePhase }
         },
-        super::api::State::InitiativePass => {msg = RequestMessage::StartCombatRound(SimpleMessage{reply_channel: game_sender, game_id: id})},
-        super::api::State::EndOfTurn => {msg = RequestMessage::BeginEndOfTurn},
-    }
+        super::api::State::InitiativePass => 
+        {
+            // RequestMessage::StartCombatRound(SimpleMessage{reply_channel: game_sender, game_id: id})
+            Message { game_id: id, reply_channel: game_sender, msg: RequestMessage::StartCombatRound }
+        },
+        super::api::State::EndOfTurn => {Message { game_id: id, reply_channel: game_sender, msg: RequestMessage::BeginEndOfTurn }},
+    };
 
     match do_send(msg, msg_channel, game_receiver).await
     {
@@ -144,15 +153,21 @@ pub async fn change_game_state(id: Uuid, new_state: Json<NewState>, state: &Stat
 }
 
 #[post("/api/<id>/initiative", data = "<character_init>")]
-pub async fn add_initiative_roll(id: Uuid, character_init: Json<InitiativeRoll>, state: &State<Sender<RequestMessage>>) ->
+pub async fn add_initiative_roll(id: Uuid, character_init: Json<InitiativeRoll>, state: &State<Sender<Message>>) ->
     Result<(Status, (ContentType, ())), (Status, String)>
 {
     let (game_sender, response_channel) = channel::<ResponseMessage>();
     let msg_channel = state.inner().clone();
-    let msg : RequestMessage = RequestMessage::AddInitiativeRoll
-    (
-        Roll { reply_channel: game_sender, game_id: id, character_id: character_init.char_id, roll: character_init.roll }
-    );
+    // let msg : RequestMessage = RequestMessage::AddInitiativeRoll
+    // (
+    //     Roll { reply_channel: game_sender, game_id: id, character_id: character_init.char_id, roll: character_init.roll }
+    // );
+    let msg = Message 
+    {
+        game_id: id, 
+        reply_channel: game_sender, 
+        msg: RequestMessage::AddInitiativeRoll(Roll{ character_id: character_init.char_id, roll: character_init.roll }) 
+    };
 
     match do_send(msg, msg_channel, response_channel).await
     {
@@ -175,7 +190,7 @@ pub async fn add_initiative_roll(id: Uuid, character_init: Json<InitiativeRoll>,
     }
 }
 
-async fn do_send(msg: RequestMessage, msg_channel: Sender<RequestMessage>, response_channel: OneShotReceiver<ResponseMessage>) 
+async fn do_send(msg: Message, msg_channel: Sender<Message>, response_channel: OneShotReceiver<ResponseMessage>) 
     -> Result<ResponseMessage, String>
 {
 

@@ -9,7 +9,7 @@ use crate::tracker::{game::Game, character::Character};
 
 
 
-pub async fn game_runner(mut message_queue: Receiver<RequestMessage>)
+pub async fn game_runner(mut message_queue: Receiver<Message>)
 {
 
     // set up whatever we're going to use to store running games.  For now, a simple HashMap will do.
@@ -20,52 +20,50 @@ pub async fn game_runner(mut message_queue: Receiver<RequestMessage>)
     {
         debug!("Received request.  processing...");
         let response: ResponseMessage;
-        let channel: tokio::sync::oneshot::Sender<ResponseMessage>;
-        match message {
-            RequestMessage::New(game_details) => {
+        let channel: tokio::sync::oneshot::Sender<ResponseMessage> = message.reply_channel;
+        let game_id = message.game_id;
+        match message.msg {
+            RequestMessage::New => {
                 debug!("Request is for new game.");
-                (channel, response) = new_game(game_details, &mut running_games);
+                response = new_game(&mut running_games);
             },
-            RequestMessage::Delete(game_details) => {
+            RequestMessage::Delete => {
                 debug!("Request is to remove game.");
-                (channel, response) = end_game(game_details, &mut running_games);
+                response = end_game(game_id, &mut running_games);
             }
-            RequestMessage::AddCharacter(character_data) => {
+            RequestMessage::AddCharacter(character) => {
                 debug!("Request is to add a new character.");
-                channel = character_data.reply_channel;
-                let character = character_data.character;
-                response = find_game_and_act(&mut running_games, character_data.game_id, | game | {add_character(character, game)});
+                // channel = character_data.reply_channel;
+                
+                response = find_game_and_act(&mut running_games, game_id, | game | {add_character(character, game)});
                 // (channel, response) = add_character(character_data, &mut running_games);
             },
-            RequestMessage::StartCombat(details) => {
+            RequestMessage::StartCombat(combatants) => {
                 debug!("Request is to start the combat phase.");
-                channel = details.reply_channel;
-                let combatants = details.combatants;
-                response = find_game_and_act(&mut running_games, details.game_id, | game | {start_combat(combatants, game)})
+                // channel = details.reply_channel;
+                // let combatants = details.combatants;
+                response = find_game_and_act(&mut running_games, game_id, | game | {start_combat(combatants, game)})
                 // (channel, response) = start_combat(details, &mut running_games);
             },
             RequestMessage::AddInitiativeRoll(roll) => {
                 debug!("Request is to add an initiative roll.");
-                channel = roll.reply_channel;
+                // channel = roll.reply_channel;
                 let character_id = roll.character_id;
                 let initiative_value = roll.roll;
                 // (channel, response) = add_init_roll(roll, &mut running_games);
-                response = find_game_and_act(&mut running_games, roll.game_id, | game | { add_init_roll(character_id, initiative_value, game)});
+                response = find_game_and_act(&mut running_games, game_id, | game | { add_init_roll(character_id, initiative_value, game)});
             },
-            RequestMessage::BeginInitiativePhase(game_data) => {
+            RequestMessage::BeginInitiativePhase => {
                 debug!("Request is to begin the initiative phase.");
-                (channel, response) = try_initiative_phase(game_data, &mut running_games)
+                response = find_game_and_act(&mut running_games, game_id, try_initiative_phase);
             },
-            RequestMessage::StartCombatRound(msg) => {
+            RequestMessage::StartCombatRound => {
                 debug!("Request is to begin a combat round.");
-                (channel, response) = try_begin_combat(msg, &mut running_games)
+                response = find_game_and_act(&mut running_games, game_id, try_begin_combat);
             },
-            RequestMessage::AdvanceTurn(msg) => {
+            RequestMessage::AdvanceTurn => {
                 debug!("Request is to advance to the next event in the pass.");
-                let id = msg.game_id;
-                channel = msg.reply_channel;
-                // let response = find_game_and_act(&mut running_games, id, | game | {return try_advance_turn(msg, game)});
-                response = find_game_and_act(&mut running_games, id, try_advance_turn);
+                response = find_game_and_act(&mut running_games, game_id, try_advance_turn);
             }
             _ => { todo!()}
         }
@@ -77,9 +75,9 @@ pub async fn game_runner(mut message_queue: Receiver<RequestMessage>)
     }
 }
 
-fn new_game(game_details: NewGame, running_games: &mut HashMap<Uuid, Game>) -> (Sender<ResponseMessage>, ResponseMessage)
+fn new_game(running_games: &mut HashMap<Uuid, Game>) -> ResponseMessage
 {
-    let channel = game_details.reply_channel;
+    // let channel = game_details.reply_channel;
     let response: ResponseMessage;
 
     let game_id = Uuid::new_v4();
@@ -88,22 +86,22 @@ fn new_game(game_details: NewGame, running_games: &mut HashMap<Uuid, Game>) -> (
     response = ResponseMessage::Created(game_id);
 
 
-    return (channel, response);
+    return response;
 }
 
-fn end_game(game_details: ExistingGame, running_games: &mut HashMap<Uuid, Game>) -> (Sender<ResponseMessage>, ResponseMessage)
+fn end_game(game: Uuid, running_games: &mut HashMap<Uuid, Game>) -> ResponseMessage
 {
-    let channel = game_details.reply_channel;
+    // let channel = game.reply_channel;
     let response: ResponseMessage;
 
-    match running_games.remove(&game_details.game_id)
+    match running_games.remove(&game)
     {
         Some(_) => {response = ResponseMessage::Destroyed},
         None => {response = ResponseMessage::Error(
-            Error{ message: String::from(format!("No game by ID {} exists.", game_details.game_id.clone())), kind: ErrorKind::NoMatchingGame })},
+            Error{ message: String::from(format!("No game by ID {} exists.", game.clone())), kind: ErrorKind::NoMatchingGame })},
     }
 
-    return (channel, response);
+    return response;
 }
 
 fn add_character(character: Character, game: &mut Game) -> ResponseMessage
@@ -147,33 +145,32 @@ fn start_combat(combatants: Vec<Uuid>, game: &mut Game) -> ResponseMessage
 
 }
 
-fn try_initiative_phase(game_data: SimpleMessage, running_games: &mut HashMap<Uuid, Game>) -> (Sender<ResponseMessage>, ResponseMessage)
+fn try_initiative_phase(game: &mut Game) -> ResponseMessage
 {
-    let channel = game_data.reply_channel;
     let response: ResponseMessage;
 
-    match running_games.entry(game_data.game_id)
+    // match game.entry(game_data.game_id)
+    // {
+    //     std::collections::hash_map::Entry::Occupied(mut entry) => {
+    //         let game = entry.get_mut();
+    //         debug!("Game exists.");
+    match game.start_initiative_phase()
     {
-        std::collections::hash_map::Entry::Occupied(mut entry) => {
-            let game = entry.get_mut();
-            debug!("Game exists.");
-            match game.start_initiative_phase()
-            {
-                Ok(_) => {
-                    debug!("Non-error returned from game.start_initiative_phase()");
-                    response = ResponseMessage::InitiativePhaseStarted;
-                },
-                Err(game_err) => {
-                    debug!("Error returned from game.start_initiative_phase()");
-                    let runner_err = Error {kind: ErrorKind::InvalidStateAction, message: game_err.msg};
-                    response = ResponseMessage::Error(runner_err);
-                },
-            }
+        Ok(_) => {
+            debug!("Non-error returned from game.start_initiative_phase()");
+            response = ResponseMessage::InitiativePhaseStarted;
         },
-        std::collections::hash_map::Entry::Vacant(_) => todo!(),
+        Err(game_err) => {
+            error!("Error returned from game.start_initiative_phase()");
+            let runner_err = Error {kind: ErrorKind::InvalidStateAction, message: game_err.msg};
+            response = ResponseMessage::Error(runner_err);
+        },
     }
+    //     },
+    //     std::collections::hash_map::Entry::Vacant(_) => todo!(),
+    // }
 
-    return (channel, response);
+    return response;
 }
 
 fn add_init_roll(character_id: Uuid, roll: i8, game: &mut Game) -> ResponseMessage
@@ -226,39 +223,38 @@ fn add_init_roll(character_id: Uuid, roll: i8, game: &mut Game) -> ResponseMessa
 
 }
 
-fn try_begin_combat(msg: SimpleMessage, running_games: &mut HashMap<Uuid, Game>) -> (Sender<ResponseMessage>, ResponseMessage)
+fn try_begin_combat(game: &mut Game) -> ResponseMessage
 {
-    let game_id = msg.game_id;
-    let reply_channel = msg.reply_channel;
+    
     let response: ResponseMessage;
 
-    match running_games.entry(game_id)
-    {
-        std::collections::hash_map::Entry::Occupied(mut entry) => {
-            let game = entry.get_mut();
+    // match game.entry(game_id)
+    // {
+    //     std::collections::hash_map::Entry::Occupied(mut entry) => {
+    //         let game = entry.get_mut();
 
-            if let Err(err) = game.start_combat_rounds()
-            {
-                match err.kind
-                {
-                    crate::tracker::game::ErrorKind::InvalidStateAction => {
-                        response = ResponseMessage::Error(Error{ message: err.msg, kind: ErrorKind::InvalidStateAction })
-                    },
-                    _ => {unreachable!()}
-                }
-            }
-            else 
-            {
-                response = ResponseMessage::CombatRoundStarted;    
-            }
-        },
-        std::collections::hash_map::Entry::Vacant(_) =>
+    if let Err(err) = game.start_combat_rounds()
+    {
+        match err.kind
         {
-            response = game_not_found(game_id);
+            crate::tracker::game::ErrorKind::InvalidStateAction => {
+                response = ResponseMessage::Error(Error{ message: err.msg, kind: ErrorKind::InvalidStateAction })
+            },
+            _ => {unreachable!()}
         }
     }
+    else 
+    {
+        response = ResponseMessage::CombatRoundStarted;    
+    }
+    //     },
+    //     std::collections::hash_map::Entry::Vacant(_) =>
+    //     {
+    //         response = game_not_found(game_id);
+    //     }
+    // }
 
-    return (reply_channel, response);
+    return response;
 }
 
 pub fn try_advance_turn(game: &mut Game) -> ResponseMessage
@@ -321,17 +317,24 @@ fn game_not_found(id: Uuid) -> ResponseMessage
     )
 }
 
+pub struct Message
+{
+    pub game_id: Uuid,
+    pub reply_channel: tokio::sync::oneshot::Sender<ResponseMessage>,
+    pub msg: RequestMessage,
+}
+
 pub enum RequestMessage
 {
-    New(NewGame),
-    Delete(ExistingGame),
-    AddCharacter(AddCharacter),
-    StartCombat(CombatSetup),
+    New,
+    Delete,
+    AddCharacter(Character),
+    StartCombat(Vec<Uuid>),
     AddInitiativeRoll(Roll),
-    BeginInitiativePhase(SimpleMessage),
-    QueryInitiativePhase(SimpleMessage),
-    StartCombatRound(SimpleMessage),
-    AdvanceTurn(SimpleMessage),
+    BeginInitiativePhase,
+    QueryInitiativePhase,
+    StartCombatRound,
+    AdvanceTurn,
     BeginEndOfTurn,
 }
 
@@ -382,8 +385,8 @@ pub struct AddCharacter
 
 pub struct Roll
 {
-    pub reply_channel: tokio::sync::oneshot::Sender<ResponseMessage>,
-    pub game_id: Uuid,
+    // pub reply_channel: tokio::sync::oneshot::Sender<ResponseMessage>,
+    // pub game_id: Uuid,
     pub character_id: Uuid,
     pub roll: i8,
 }
@@ -435,10 +438,11 @@ use log::debug;
     use super::AddCharacter;
     use super::ExistingGame;
     use super::ErrorKind;
+    use super::Message;
     use super::Roll;
     use super::SimpleMessage;
 
-    pub fn init() -> Sender<RequestMessage> {
+    pub fn init() -> Sender<Message> {
         let _ = env_logger::builder().is_test(true).try_init();
         debug!("Logger should be active.");
 
@@ -452,10 +456,11 @@ use log::debug;
         return sender;
     }
 
-    pub async fn add_new_game(game_input_channel: &Sender<RequestMessage>) -> Uuid
+    pub async fn add_new_game(game_input_channel: &Sender<Message>) -> Uuid
     {
         let (game_sender, game_receiver) = channel();
-        let msg = RequestMessage::New(NewGame{reply_channel: game_sender});
+        // let msg = RequestMessage::New(NewGame{reply_channel: game_sender});
+        let msg = Message { game_id: Uuid::new_v4(), reply_channel: game_sender, msg: RequestMessage::New };
 
         match game_input_channel.send(msg).await {
             Ok(_) => {
@@ -488,13 +493,14 @@ use log::debug;
         
     }
 
-    async fn create_and_add_char(game_input_channel: &Sender<RequestMessage>, game_id: Uuid) -> Uuid
+    async fn create_and_add_char(game_input_channel: &Sender<Message>, game_id: Uuid) -> Uuid
     {
         let (game_sender, game_receiver) = channel::<ResponseMessage>();
 
         let character = create_character();
 
-        let msg = RequestMessage::AddCharacter(AddCharacter{ reply_channel: game_sender, game_id, character });
+        // let msg = RequestMessage::AddCharacter(AddCharacter{ reply_channel: game_sender, game_id, character });
+        let msg = Message { game_id, reply_channel: game_sender, msg: RequestMessage::AddCharacter(character) };
         let send_state = game_input_channel.send(msg).await;
         assert!(send_state.is_ok());
 
@@ -524,7 +530,8 @@ use log::debug;
         // when I send a NewGame message with one half of a oneshot channel...
         let (game_sender, game_receiver) = channel();
         debug!("Creating new game.");
-        let msg = RequestMessage::New(NewGame{reply_channel: game_sender});
+        // let msg = RequestMessage::New(NewGame{reply_channel: game_sender});
+        let msg = Message{ game_id: Uuid::new_v4(), reply_channel: game_sender, msg: RequestMessage::New };
 
         debug!("Game created - supposedly.  Await response.");
         // I should get a Uuid on the oneshot reply channel and not an error.
@@ -554,7 +561,8 @@ use log::debug;
         // when I send a Delete message with one half of a oneshot channel and a game ID that really exists...
         let game_id = add_new_game(&game_input_channel).await;
 
-        let msg = RequestMessage::Delete(ExistingGame{ game_id, reply_channel: game_sender});
+        // let msg = RequestMessage::Delete(ExistingGame{ game_id, reply_channel: game_sender});
+        let msg = Message { game_id: game_id, reply_channel: game_sender, msg: RequestMessage::Delete };
         
         let send_state = game_input_channel.send(msg).await;
         assert!(send_state.is_ok());
@@ -578,7 +586,8 @@ use log::debug;
 
         add_new_game(&game_input_channel).await;
 
-        let msg = RequestMessage::Delete(ExistingGame{ game_id: Uuid::new_v4(), reply_channel: game_sender});
+        // let msg = RequestMessage::Delete(ExistingGame{ game_id: Uuid::new_v4(), reply_channel: game_sender});
+        let msg = Message { game_id: Uuid::new_v4(), reply_channel: game_sender, msg: RequestMessage::Delete };
         
         let send_state = game_input_channel.send(msg).await;
         assert!(send_state.is_ok());
@@ -607,7 +616,8 @@ use log::debug;
 
         let character = create_character();
 
-        let msg = RequestMessage::AddCharacter(AddCharacter{ reply_channel: game_sender, game_id, character });
+        // let msg = RequestMessage::AddCharacter(AddCharacter{ reply_channel: game_sender, game_id, character });
+        let msg = Message { game_id: game_id, reply_channel: game_sender, msg: RequestMessage::AddCharacter(character) };
         let send_state = game_input_channel.send(msg).await;
         assert!(send_state.is_ok());
 
@@ -632,7 +642,8 @@ use log::debug;
 
         let character = create_character();
 
-        let msg = RequestMessage::AddCharacter(AddCharacter{ reply_channel: game_sender, game_id: Uuid::new_v4(), character});
+        // let msg = RequestMessage::AddCharacter(AddCharacter{ reply_channel: game_sender, game_id: Uuid::new_v4(), character});
+        let msg = Message { game_id: Uuid::new_v4(), reply_channel: game_sender, msg: RequestMessage::AddCharacter(character) };
         let send_state = game_input_channel.send(msg).await;
 
         assert!(send_state.is_ok());
@@ -666,7 +677,8 @@ use log::debug;
 
         let combatants = vec![character1, character2, character3, character4];
 
-        let msg = RequestMessage::StartCombat(CombatSetup{reply_channel: game_sender, game_id, combatants});
+        // let msg = RequestMessage::StartCombat(CombatSetup{reply_channel: game_sender, game_id, combatants});
+        let msg = Message { game_id: game_id, reply_channel: game_sender, msg: RequestMessage::StartCombat(combatants) };
 
         let response = game_input_channel.send(msg).await;
 
@@ -701,7 +713,8 @@ use log::debug;
 
         let combatants = vec![Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4()];
 
-        let msg = RequestMessage::StartCombat(CombatSetup{reply_channel: game_sender, game_id, combatants});
+        // let msg = RequestMessage::StartCombat(CombatSetup{reply_channel: game_sender, game_id, combatants});
+        let msg = Message { game_id: game_id, reply_channel: game_sender, msg: RequestMessage::StartCombat(combatants) };
 
         let response = game_input_channel.send(msg).await;
 
@@ -739,12 +752,13 @@ use log::debug;
 
         let game_id = add_new_game(&game_input_channel).await;
 
-        let _character1 = create_and_add_char(&game_input_channel, game_id).await;
-        let _character2 = create_and_add_char(&game_input_channel, game_id).await;
-        let _character3 = create_and_add_char(&game_input_channel, game_id).await;
-        let _character4 = create_and_add_char(&game_input_channel, game_id).await;
+        // let _character1 = create_and_add_char(&game_input_channel, game_id).await;
+        // let _character2 = create_and_add_char(&game_input_channel, game_id).await;
+        // let _character3 = create_and_add_char(&game_input_channel, game_id).await;
+        // let _character4 = create_and_add_char(&game_input_channel, game_id).await;
 
-        let msg = RequestMessage::StartCombat(CombatSetup{reply_channel: game_sender, game_id, combatants: Vec::<Uuid>::new()});
+        // let msg = RequestMessage::StartCombat(CombatSetup{reply_channel: game_sender, game_id, combatants: Vec::<Uuid>::new()});
+        let msg = Message { game_id: game_id, reply_channel: game_sender, msg: RequestMessage::StartCombat(Vec::<Uuid>::new()) };
 
         let response = game_input_channel.send(msg).await;
 
@@ -767,7 +781,8 @@ use log::debug;
 
         let combatants = vec![character1, character2, character3, character4];
 
-        let msg = RequestMessage::StartCombat(CombatSetup{reply_channel: game_sender, game_id: Uuid::new_v4(), combatants});
+        // let msg = RequestMessage::StartCombat(CombatSetup{reply_channel: game_sender, game_id: Uuid::new_v4(), combatants});
+        let msg = Message { game_id: Uuid::new_v4(), reply_channel: game_sender, msg: RequestMessage::StartCombat(combatants) };
 
         let response = game_input_channel.send(msg).await;
 
@@ -809,13 +824,14 @@ use log::debug;
         let character4 = create_and_add_char(&game_input_channel, game_id).await;
         let combatants = vec![character1, character2, character3, character4];
 
-        let msg = RequestMessage::StartCombat(CombatSetup{reply_channel: game_sender, game_id, combatants});
+        let msg = Message { game_id: game_id, reply_channel: game_sender, msg: RequestMessage::StartCombat(combatants) };
 
         let _response = game_input_channel.send(msg).await;
 
         let (game_sender, game_receiver) = channel::<ResponseMessage>();
 
-        let msg = RequestMessage::BeginInitiativePhase(SimpleMessage{game_id, reply_channel:game_sender});
+        // let msg = RequestMessage::BeginInitiativePhase(SimpleMessage{game_id, reply_channel:game_sender});
+        let msg = Message { game_id: game_id, reply_channel: game_sender, msg: RequestMessage::BeginInitiativePhase };
 
         let response = game_input_channel.send(msg).await;
 
@@ -849,13 +865,15 @@ use log::debug;
         let _character2 = create_and_add_char(&game_input_channel, game_id).await;
         let _character3 = create_and_add_char(&game_input_channel, game_id).await;
 
-        let msg = RequestMessage::StartCombat(CombatSetup{reply_channel: game_sender, game_id, combatants: Vec::<Uuid>::new()});
+        // let msg = RequestMessage::StartCombat(CombatSetup{reply_channel: game_sender, game_id, combatants: Vec::<Uuid>::new()});
+        let msg = Message { game_id: game_id, reply_channel: game_sender, msg: RequestMessage::StartCombat(Vec::<Uuid>::new()) };
 
         let _response = game_input_channel.send(msg).await;
 
         let (game_sender, game_receiver) = channel::<ResponseMessage>();
 
-        let msg = RequestMessage::BeginInitiativePhase(SimpleMessage{game_id, reply_channel:game_sender});
+        // let msg = RequestMessage::BeginInitiativePhase(SimpleMessage{game_id, reply_channel:game_sender});
+        let msg = Message { game_id: game_id, reply_channel: game_sender, msg: RequestMessage::BeginInitiativePhase };
 
         let response = game_input_channel.send(msg).await;
 
@@ -892,17 +910,20 @@ use log::debug;
         let character1 = create_and_add_char(&game_input_channel, game_id).await;
         let character2 = create_and_add_char(&game_input_channel, game_id).await;
 
-        let msg = RequestMessage::StartCombat(CombatSetup{reply_channel: game_sender, game_id, combatants: vec![character1, character2]});
+        // let msg = RequestMessage::StartCombat(CombatSetup{reply_channel: game_sender, game_id, combatants: vec![character1, character2]});
+        let msg = Message { game_id, reply_channel: game_sender, msg: RequestMessage::StartCombat(vec![character1, character2]) };
 
         assert!(game_input_channel.send(msg).await.is_ok());
 
         let (game_sender, _game_receiver) = channel::<ResponseMessage>();
-        let msg = RequestMessage::BeginInitiativePhase(SimpleMessage{game_id, reply_channel: game_sender});
+        // let msg = RequestMessage::BeginInitiativePhase(SimpleMessage{game_id, reply_channel: game_sender});
+        let msg = Message { game_id, reply_channel: game_sender, msg: RequestMessage::BeginInitiativePhase };
         assert!(game_input_channel.send(msg).await.is_ok());
 
         let (game_sender, game_receiver) = channel::<ResponseMessage>();
-        let roll: Roll = Roll{ reply_channel: game_sender, game_id, character_id: character1, roll: 13 };
-        let msg = RequestMessage::AddInitiativeRoll(roll);
+        let roll: Roll = Roll{ character_id: character1, roll: 13 };
+        // let msg = RequestMessage::AddInitiativeRoll(roll);
+        let msg = Message { game_id, reply_channel: game_sender, msg: RequestMessage::AddInitiativeRoll(roll) };
         assert!(game_input_channel.send(msg).await.is_ok());
 
         match game_receiver.await
@@ -937,20 +958,23 @@ use log::debug;
         let character4 = create_and_add_char(&game_input_channel, game_id).await;
         let combatants = vec![character1, character2, character3, character4];
 
-        let msg = RequestMessage::StartCombat
-            (CombatSetup{reply_channel: game_sender, game_id, combatants: combatants.clone()});
+        // let msg = RequestMessage::StartCombat
+        //     (CombatSetup{reply_channel: game_sender, game_id, combatants: combatants.clone()});
+        let msg = Message { game_id, reply_channel: game_sender, msg: RequestMessage::StartCombat(combatants.clone()) };
 
         assert!(game_input_channel.send(msg).await.is_ok());
 
         let (game_sender, _game_receiver) = channel::<ResponseMessage>();
-        let msg = RequestMessage::BeginInitiativePhase(SimpleMessage{game_id, reply_channel: game_sender});
+        // let msg = RequestMessage::BeginInitiativePhase(SimpleMessage{game_id, reply_channel: game_sender});
+        let msg = Message { game_id, reply_channel: game_sender, msg: RequestMessage::BeginInitiativePhase };
         assert!(game_input_channel.send(msg).await.is_ok());
 
         for character_id in combatants
         {
             let (game_sender, game_receiver) = channel::<ResponseMessage>();
-            let roll: Roll = Roll{ reply_channel: game_sender, game_id, character_id, roll: 13 };
-            let msg = RequestMessage::AddInitiativeRoll(roll);
+            let roll: Roll = Roll{character_id, roll: 13 };
+            // let msg = RequestMessage::AddInitiativeRoll(roll);
+            let msg = Message { game_id, reply_channel: game_sender, msg: RequestMessage::AddInitiativeRoll(roll) };
             assert!(game_input_channel.send(msg).await.is_ok());
     
             match game_receiver.await
@@ -971,7 +995,7 @@ use log::debug;
         }
     }
 
-    async fn construct_combat_ready_game() -> (Sender<RequestMessage>, Uuid, Vec<Uuid>)
+    async fn construct_combat_ready_game() -> (Sender<Message>, Uuid, Vec<Uuid>)
     {
         let game_input_channel = init();
         let (game_sender, _game_receiver) = channel::<ResponseMessage>();
@@ -984,13 +1008,15 @@ use log::debug;
         let character4 = create_and_add_char(&game_input_channel, game_id).await;
         let combatants = vec![character1, character2, character3, character4];
 
-        let msg = RequestMessage::StartCombat
-            (CombatSetup{reply_channel: game_sender, game_id, combatants: combatants.clone()});
+        // let msg = RequestMessage::StartCombat
+        //     (CombatSetup{reply_channel: game_sender, game_id, combatants: combatants.clone()});
+        let msg = Message { game_id, reply_channel: game_sender, msg: RequestMessage::StartCombat(combatants.clone()) };
 
         assert!(game_input_channel.send(msg).await.is_ok());
 
         let (game_sender, _game_receiver) = channel::<ResponseMessage>();
-        let msg = RequestMessage::BeginInitiativePhase(SimpleMessage{game_id, reply_channel: game_sender});
+        // let msg = RequestMessage::BeginInitiativePhase(SimpleMessage{game_id, reply_channel: game_sender});
+        let msg = Message { game_id, reply_channel: game_sender, msg: RequestMessage::BeginInitiativePhase };
         assert!(game_input_channel.send(msg).await.is_ok());
 
         return (game_input_channel, game_id, combatants);
@@ -1002,11 +1028,13 @@ use log::debug;
         let (game_input_channel, game_id, combatants) = construct_combat_ready_game().await;
 
         let (game_sender, _game_receiver) = channel::<ResponseMessage>();
-        let roll = Roll{ reply_channel: game_sender, game_id, character_id: *combatants.get(0).unwrap(), roll: 23 };
-        assert!(game_input_channel.send(RequestMessage::AddInitiativeRoll(roll)).await.is_ok());
+        let roll = Roll{ character_id: *combatants.get(0).unwrap(), roll: 23 };
+        let msg = Message{game_id, reply_channel: game_sender, msg: RequestMessage::AddInitiativeRoll(roll)};
+        assert!(game_input_channel.send(msg).await.is_ok());
         
         let (game_sender, game_receiver) = channel::<ResponseMessage>();
-        let msg = RequestMessage::StartCombatRound(SimpleMessage{ reply_channel: game_sender, game_id });
+        // let msg = RequestMessage::StartCombatRound(SimpleMessage{ reply_channel: game_sender, game_id });
+        let msg = Message { game_id, reply_channel: game_sender, msg: RequestMessage::StartCombatRound };
 
         assert!(game_input_channel.send(msg).await.is_ok());
 
@@ -1035,7 +1063,8 @@ use log::debug;
         let game_input_channel = init();
         let game_id: Uuid;
         let (game_sender, game_receiver) = channel();
-        let msg = RequestMessage::New(NewGame{ reply_channel: game_sender });
+        // let msg = RequestMessage::New(NewGame{ reply_channel: game_sender });
+        let msg = Message { game_id: Uuid::new_v4(), reply_channel: game_sender, msg: RequestMessage::New };
 
         assert!(game_input_channel.send(msg).await.is_ok());
         match game_receiver.await
@@ -1052,7 +1081,8 @@ use log::debug;
         }
 
         let (game_sender, game_receiver) = channel();
-        let msg = RequestMessage::StartCombatRound(SimpleMessage{ reply_channel: game_sender, game_id });
+        // let msg = RequestMessage::StartCombatRound(SimpleMessage{ reply_channel: game_sender, game_id });
+        let msg = Message { game_id, reply_channel: game_sender, msg: RequestMessage::StartCombatRound };
 
         assert!(game_input_channel.send(msg).await.is_ok());
 
@@ -1080,7 +1110,8 @@ use log::debug;
         let (game_input_channel, game_id, combatants) = construct_combat_ready_game().await;
 
         let (game_sender, game_receiver) = channel::<ResponseMessage>();
-        let msg = RequestMessage::StartCombatRound(SimpleMessage{ reply_channel: game_sender, game_id });
+        // let msg = RequestMessage::StartCombatRound(SimpleMessage{ reply_channel: game_sender, game_id });
+        let msg = Message { game_id, reply_channel: game_sender, msg: RequestMessage::StartCombatRound };
 
         assert!(game_input_channel.send(msg).await.is_ok());
 
@@ -1106,7 +1137,8 @@ use log::debug;
     {
         let game_input_channel = init();
         let (game_sender, game_receiver) = channel::<ResponseMessage>();
-        let msg = RequestMessage::New(NewGame{ reply_channel: game_sender });
+        // let msg = RequestMessage::New(NewGame{ reply_channel: game_sender });
+        let msg = Message { game_id: Uuid::new_v4(), reply_channel: game_sender, msg: RequestMessage::New };
 
         assert!(game_input_channel.send(msg).await.is_ok());
         let game_id: Uuid;
@@ -1123,7 +1155,8 @@ use log::debug;
         let character2 = create_and_add_char(&game_input_channel, game_id).await;
 
         let (game_sender, game_receiver) = channel::<ResponseMessage>();
-        let msg = RequestMessage::BeginInitiativePhase(SimpleMessage{ reply_channel: game_sender, game_id });
+        // let msg = RequestMessage::BeginInitiativePhase(SimpleMessage{ reply_channel: game_sender, game_id });
+        let msg = Message { game_id, reply_channel: game_sender, msg: RequestMessage::BeginInitiativePhase };
         assert!(game_input_channel.send(msg).await.is_ok());
 
         match game_receiver.await
@@ -1140,12 +1173,14 @@ use log::debug;
         }
 
         let (game_sender, game_receiver) = channel::<ResponseMessage>();
-        let msg = RequestMessage::StartCombat(CombatSetup{ reply_channel: game_sender, game_id, combatants: vec![character1, character2] });
+        // let msg = RequestMessage::StartCombat(CombatSetup{ reply_channel: game_sender, game_id, combatants: vec![character1, character2] });
+        let msg = Message { game_id, reply_channel: game_sender, msg: RequestMessage::StartCombat(vec![character1, character2]) };
         assert!(game_input_channel.send(msg).await.is_ok());
         assert!(game_receiver.await.is_ok());
 
         let (game_sender, game_receiver) = channel::<ResponseMessage>();
-        let msg = RequestMessage::BeginInitiativePhase(SimpleMessage { reply_channel: game_sender, game_id });
+        // let msg = RequestMessage::BeginInitiativePhase(SimpleMessage { reply_channel: game_sender, game_id });
+        let msg = Message { game_id, reply_channel: game_sender, msg: RequestMessage::BeginInitiativePhase };
         assert!(game_input_channel.send(msg).await.is_ok());
 
         match game_receiver.await

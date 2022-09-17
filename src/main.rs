@@ -6,7 +6,7 @@ pub mod tracker;
 pub mod http;
 pub mod gamerunner;
 
-use crate::{gamerunner::RequestMessage};
+use crate::gamerunner::Message;
 use crate::http::server::{new_game, get_example_char, add_new_character, change_game_state, get_state_demo};
 
 #[rocket::main]
@@ -16,7 +16,7 @@ async fn main() {
     
     debug!("Beginning launch of Shadowrun Combat Manager");
 
-    let (runner_sender, runner_receiver) = mpsc::channel::<RequestMessage>(10);
+    let (runner_sender, runner_receiver) = mpsc::channel::<Message>(10);
 
     // let (mut main_sender, mut main_receiver) = mpsc::channel::<MainMessages>(2);
 
