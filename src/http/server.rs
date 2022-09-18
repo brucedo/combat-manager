@@ -5,7 +5,7 @@ use tokio::sync::{mpsc::Sender, oneshot::channel};
 use tokio::sync::oneshot::Receiver as OneShotReceiver;
 use uuid::Uuid;
 
-use crate::{gamerunner::{Action, Outcome, Roll, Message}, http::api::{NewGameJson, InitiativeRoll},};
+use crate::{gamerunner::{Event, Outcome, Roll, Message}, http::api::{NewGameJson, InitiativeRoll},};
 
 use super::api::{Character, AddedCharacterJson, NewState, BeginCombat};
 
@@ -18,7 +18,7 @@ pub async fn new_game(state: &State<Sender<Message>>) -> Result<Json<NewGameJson
 
     let (runner_sender, response_channel) = channel::<Outcome>();
     // let msg = RequestMessage::New(NewGame{reply_channel: runner_sender});
-    let msg = Message { game_id: Uuid::new_v4(), reply_channel: runner_sender, msg: Action::New };
+    let msg = Message { game_id: Uuid::new_v4(), reply_channel: runner_sender, msg: Event::New };
 
     match do_send(msg, msg_channel, response_channel).await
     {
@@ -83,7 +83,7 @@ pub async fn add_new_character(id: Uuid, character: Json<Character<'_>>, state: 
     // let char_id = game_char.id.clone();
 
     // let msg = RequestMessage::AddCharacter(AddCharacter{reply_channel: request, game_id: id, character: game_char});
-    let msg = Message{ game_id: id, reply_channel: request, msg: Action::AddCharacter(game_char) };
+    let msg = Message{ game_id: id, reply_channel: request, msg: Event::AddCharacter(game_char) };
 
     match do_send(msg, msg_channel, response_channel).await
     {
@@ -118,19 +118,19 @@ pub async fn change_game_state(id: Uuid, new_state: Json<NewState>, state: &Stat
     {
         super::api::State::Combat(combat_data) => {
             // msg = RequestMessage::StartCombat(CombatSetup { reply_channel: game_sender, game_id: id, combatants: combat_data.participants.clone() });
-            Message{ game_id: id, reply_channel: game_sender, msg: Action::StartCombat(combat_data.participants.clone()) }
+            Message{ game_id: id, reply_channel: game_sender, msg: Event::StartCombat(combat_data.participants.clone()) }
             
         },
         super::api::State::InitiativeRolls => {
             // RequestMessage::BeginInitiativePhase(SimpleMessage{reply_channel: game_sender, game_id: id})
-            Message { game_id: id, reply_channel: game_sender, msg: Action::BeginInitiativePhase }
+            Message { game_id: id, reply_channel: game_sender, msg: Event::BeginInitiativePhase }
         },
         super::api::State::InitiativePass => 
         {
             // RequestMessage::StartCombatRound(SimpleMessage{reply_channel: game_sender, game_id: id})
-            Message { game_id: id, reply_channel: game_sender, msg: Action::StartCombatRound }
+            Message { game_id: id, reply_channel: game_sender, msg: Event::StartCombatRound }
         },
-        super::api::State::EndOfTurn => {Message { game_id: id, reply_channel: game_sender, msg: Action::BeginEndOfTurn }},
+        super::api::State::EndOfTurn => {Message { game_id: id, reply_channel: game_sender, msg: Event::BeginEndOfTurn }},
     };
 
     match do_send(msg, msg_channel, game_receiver).await
@@ -166,7 +166,7 @@ pub async fn add_initiative_roll(id: Uuid, character_init: Json<InitiativeRoll>,
     {
         game_id: id, 
         reply_channel: game_sender, 
-        msg: Action::AddInitiativeRoll(Roll{ character_id: character_init.char_id, roll: character_init.roll }) 
+        msg: Event::AddInitiativeRoll(Roll{ character_id: character_init.char_id, roll: character_init.roll }) 
     };
 
     match do_send(msg, msg_channel, response_channel).await
