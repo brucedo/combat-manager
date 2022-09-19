@@ -174,7 +174,7 @@ fn add_init_roll(roll: Roll, game: &mut Game) -> Outcome
                     }
                 );
             },
-            crate::tracker::game::ErrorKind::NoCombatants => {
+            crate::tracker::game::ErrorKind::UnknownCastId => {
                 response = Outcome::Error
                 (
                     Error 
@@ -1318,4 +1318,6 @@ mod tests
             Err(_) => {panic!("The one-shot receiver dropped.");},
         }
     }
+
+    
 }

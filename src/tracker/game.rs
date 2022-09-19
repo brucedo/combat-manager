@@ -232,7 +232,7 @@ impl Game {
             debug!("The play field has not had any combatants identified.");
             return Err(GameError::new
             (
-                ErrorKind::NoCombatants, String::from("You may not begin an initiative round if no one is going to fight.")
+                ErrorKind::UnknownCastId, String::from("You may not begin an initiative round if no one is going to fight.")
             ))
         }
         
@@ -294,7 +294,7 @@ impl Game {
         }
         else
         {
-            return Err(GameError::new(ErrorKind::NoCombatants, String::from(format!("The id {} does not match any registered combatant.", character_id))));
+            return Err(GameError::new(ErrorKind::UnknownCastId, String::from(format!("The id {} does not match any registered combatant.", character_id))));
         }
 
         Ok(())
@@ -333,7 +333,7 @@ impl Game {
         {
             PassState::PassDone => {
                 return Err(GameError::new(
-                    ErrorKind::NoCombatants, 
+                    ErrorKind::UnknownCastId, 
                     String::from("No more initiative passes to be processed.")
                 ))
             },
@@ -682,7 +682,6 @@ pub enum ErrorKind {
     NoAction,
     GameStateInconsistency,
     UnresolvedCombatant,
-    NoCombatants
 }
 
 #[derive(Debug)]
@@ -736,7 +735,7 @@ mod tests
 
 
     #[test]
-    pub fn build_game()
+    pub fn when_a_game_is_built_it_starts_in_pre_combat_state_with_empty_cast_and_combat_sets()
     {
         let mut game = Game::new();
 
@@ -747,31 +746,35 @@ mod tests
     }
 
     #[test]
-    pub fn test_adding_cast_member()
+    pub fn adding_a_cast_member_to_a_game_increases_the_cast_size_by_one()
     {
+
         let cast_member = Character::new_pc(Metatypes::Human, String::from("Demo"));
         let mut game: Game = Game::new();
 
+        let pre_add_size = game.cast_size();
         game.add_cast_member(cast_member);
 
-        assert_eq!(game.cast_size(), 1);
+        assert_eq!(game.cast_size(), pre_add_size + 1);
         
     }
 
     #[test]
-    pub fn test_removing_cast_member()
+    pub fn removing_a_cast_member_decreases_cast_size_by_one()
     {
         let cast_member = Character::new_pc(Metatypes::Elf, String::from("Delfmo"));
         //  cast_member.id;
         let mut game: Game = Game::new();
 
         let id = game.add_cast_member(cast_member);
+
+        let pre_remove_size = game.cast_size();
         game.retire_cast_member(id);
-        assert_eq!(game.cast_size(), 0);
+        assert_eq!(game.cast_size(), pre_remove_size - 1); 
     }
 
     #[test]
-    pub fn test_waiting_for()
+    pub fn waiting_for_produces_a_list_of_ids_for_characters_who_have_not_acted_on_the_current_combat_turn()
     {
         let mut game = Game::new();
         let dorf = build_dwarf();
@@ -801,7 +804,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_waiting_for_no_one()
+    pub fn waiting_for_produces_empty_list_if_all_characters_in_combat_turn_have_acted()
     {
         let mut game = Game::new();
         let dorf = build_dwarf();
@@ -824,7 +827,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_waiting_wrong_state()
+    pub fn waiting_for_produces_none_if_not_in_combat_turns_phase()
     {
         let mut game = Game::new();
         let dorf = build_dwarf();
@@ -848,7 +851,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_on_deck()
+    pub fn on_deck_returns_list_of_ids_whose_action_turn_follows_current()
     {
         let mut game = Game::new();
         let dorf = build_dwarf();
@@ -872,7 +875,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_on_deck_wrong_state()
+    pub fn on_deck_produces_none_if_game_not_processing_combat_turns()
     {
         let mut game = Game::new();
         let dorf = build_dwarf();
@@ -890,7 +893,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_on_deck_none_remain()
+    pub fn on_deck_returns_none_if_no_combatants_remain_to_act_on_this_turn()
     {
         let mut game = Game::new();
         let dorf = build_dwarf();
@@ -915,7 +918,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_get_combatants()
+    pub fn get_combatants_returns_list_of_all_participants_in_the_fight()
     {
         let mut game = Game::new();
 
@@ -933,7 +936,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_get_some_combatants()
+    pub fn get_combatants_returns_only_cast_members_registered_in_current_combat_session()
     {
         let mut game = Game::new();
 
@@ -952,7 +955,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_get_no_combatants()
+    pub fn when_get_combatants_is_called_with_no_active_combatants_an_empty_list_is_returned()
     {
         let mut game = Game::new();
 
@@ -970,17 +973,29 @@ mod tests
     }
 
     #[test]
-    pub fn test_get_combatants_no_cast()
+    pub fn get_combatants_is_independent_of_cast_list()
     {
-        let game = Game::new();
+        let mut game = Game::new();
 
         let combatants = game.get_combatants();
+        assert_eq!(0, combatants.len());
+
+        let mork = build_orc();
+        let dorf = build_dwarf();
+        let melf = build_elf();
+
+        game.add_cast_member(mork);
+        game.add_cast_member(dorf);
+        game.add_cast_member(melf);
+
+        let combatants = game.get_combatants();
+        assert_eq!(0, combatants.len());
 
         assert_eq!(0, combatants.len());
     }
 
     #[test]
-    pub fn test_end_combat()
+    pub fn when_combat_is_ended_the_game_resets_the_combatants_list_and_resets_game_state()
     {
         let mut game = Game::new();
 
@@ -1010,7 +1025,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_adding_combatant_not_in_cast()
+    pub fn adding_non_cast_member_to_combat_results_in_unrecognized_character_error()
     {
         let mut game = Game::new();
 
@@ -1019,10 +1034,22 @@ mod tests
         let result = game.add_combatant(combatant_id);
 
         assert!(result.is_err());
+        match result
+        {
+            Ok(_) => {panic!("This should not have succeeded.")},
+            Err(err) => 
+            {
+                match err.kind
+                {
+                    crate::tracker::game::ErrorKind::UnknownCastId => {},
+                    _ => {panic!("Test expected different error type (UnknownCastId)");}
+                }
+            },
+        }
     }
 
     #[test]
-    pub fn test_adding_real_combatant()
+    pub fn any_real_cast_member_may_be_added_to_combat()
     {
         let dorf = Character::new_npc(Metatypes::Dwarf, String::from("Dorf"));
         let torll = Character::new_npc(Metatypes::Troll, String::from("Torll"));
@@ -1037,7 +1064,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_adding_multiple_combatants()
+    pub fn multiple_combatants_may_be_added_in_a_vector_of_ids()
     {
         let dorf = build_dwarf();
         let mork = build_orc();
@@ -1059,7 +1086,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_adding_multiple_unknowns()
+    pub fn any_unknown_character_ids_in_vec_cause_unknown_character_error_from_add_combatants()
     {
         let dorf = build_dwarf();
         let _mork = build_orc();
@@ -1074,11 +1101,22 @@ mod tests
         combatants.push(Uuid::new_v4());
         combatants.push(Uuid::new_v4());
 
-        assert!(game.add_combatants(combatants).is_err());
+        match game.add_combatants(combatants)
+        {
+            Ok(_) => {panic!("This should not have succeeded.")},
+            Err(err) => 
+            {
+                match err.kind
+                {
+                    crate::tracker::game::ErrorKind::UnknownCastId => {},
+                    _ => {panic!("Test expected different error type (UnknownCastId)");}
+                }
+            },
+        }
     }
 
     #[test]
-    pub fn test_initative_transition()
+    pub fn when_a_game_has_combatants_it_may_enter_into_initiative_phase()
     {
         let melf = Character::new_npc(Metatypes::Elf, String::from("Melf"));
         let zorc = Character::new_npc(Metatypes::Orc, String::from("Zorc"));
@@ -1097,7 +1135,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_roll_transition_from_end_of_passes()
+    pub fn when_all_combatants_have_supplied_initiative_combat_round_phase_may_start()
     {
         let mut game = Game::new();
         let melf = build_elf();
@@ -1121,7 +1159,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_initiative_transition_fail()
+    pub fn if_game_is_in_precombat_phase_with_no_combatants_start_initiative_phase_generates_no_combatants()
     {
         let lef = Character::new_npc(Metatypes::Elf, String::from("Lef"));
 
@@ -1132,11 +1170,25 @@ mod tests
         let result = game.start_initiative_phase();
 
         assert!(result.is_err());
+
+        match result
+        {
+            Ok(_) => {panic!("This should not have succeeded.")},
+            Err(err) => 
+            {
+                match err.kind
+                {
+                    crate::tracker::game::ErrorKind::UnknownCastId => {},
+                    _ => {panic!("Test expected different error type (UnknownCastId)");}
+                }
+            },
+        }
+
         assert_eq!(game.current_state(), String::from("PreCombat"));
     }
 
     #[test]
-    pub fn add_initiative_and_fail()
+    pub fn adding_initiative_roll_before_entering_initiative_phase_results_in_invalid_state_action()
     {
         let lef = Character::new_npc(Metatypes::Elf, String::from("Lef"));
         let mut game = Game::new();
@@ -1147,10 +1199,22 @@ mod tests
         let result = game.accept_initiative_roll(lef_id, 4);
 
         assert!(result.is_err());
+        match result
+        {
+            Ok(_) => {panic!("This should not have succeeded.")},
+            Err(err) => 
+            {
+                match err.kind
+                {
+                    crate::tracker::game::ErrorKind::InvalidStateAction => {},
+                    _ => {panic!("Test expected different error type (UnknownCastId)");}
+                }
+            },
+        }
     }
 
     #[test]
-    pub fn add_initative_and_succeed()
+    pub fn adding_an_initiative_for_a_combatant_in_initiative_phase_will_return_ok()
     {
         init();
 
@@ -1167,7 +1231,7 @@ mod tests
     }
 
     #[test]
-    pub fn add_two_initatives_and_succeed()
+    pub fn adding_multiple_initiatives_to_real_combatants_will_produce_ok_for_each()
     {
         init();
 
@@ -1187,7 +1251,7 @@ mod tests
     }
 
     #[test]
-    pub fn add_init_for_no_character()
+    pub fn add_initiative_for_character_id_not_in_cast_produces_unknown_cast_id()
     {
         init();
 
@@ -1200,10 +1264,22 @@ mod tests
 
         let result = game.accept_initiative_roll(Uuid::new_v4(), 2);
         assert!(result.is_err());
+        match result
+        {
+            Ok(_) => {panic!("This should not have succeeded.")},
+            Err(err) => 
+            {
+                match err.kind
+                {
+                    crate::tracker::game::ErrorKind::UnknownCastId => {},
+                    _ => {panic!("Test expected different error type (UnknownCastId)");}
+                }
+            },
+        }
     }
 
     #[test]
-    pub fn query_initiative_state()
+    pub fn as_initiative_rolls_are_added_game_initiative_state_updates()
     {
         init();
 
@@ -1232,7 +1308,7 @@ mod tests
     }
 
     #[test]
-    pub fn begin_initiative()
+    pub fn when_all_initiatives_submitted_game_may_start_combat_rounds()
     {
         init();
 
@@ -1257,7 +1333,7 @@ mod tests
     }
 
     #[test]
-    pub fn prematurely_begin_initiative()
+    pub fn starting_combat_rounds_before_all_initiatives_submitted_produces_invalid_state_action()
     {
         init();
 
@@ -1276,10 +1352,23 @@ mod tests
 
         assert_eq!(game.current_state(), String::from("Initiative Rolls"));
         assert!(result.is_err());
+
+        match result
+        {
+            Ok(_) => {panic!("This should not have succeeded.")},
+            Err(err) => 
+            {
+                match err.kind
+                {
+                    crate::tracker::game::ErrorKind::InvalidStateAction => {},
+                    _ => {panic!("Test expected different error type (UnknownCastId)");}
+                }
+            },
+        }
     }
 
     #[test]
-    pub fn advance_init_pass_unresolved_turns()
+    pub fn attempting_to_move_to_next_initiative_pass_fails_with_unresolved_combatant_if_there_are_unresolved_players_in_init_sequence()
     {
         init();
 
@@ -1299,11 +1388,23 @@ mod tests
         // Attempting to advance to the next initiative pass should result in failure.
         let result = game.next_initiative_pass();
         assert!(result.is_err());
-        debug!("{}", result.unwrap_err().msg);
+        match result
+        {
+            Ok(_) => {panic!("This should not have succeeded.")},
+            Err(err) => 
+            {
+                match err.kind
+                {
+                    crate::tracker::game::ErrorKind::UnresolvedCombatant => {},
+                    _ => {panic!("Test expected different error type (UnknownCastId)");}
+                }
+            },
+        }
+
     }
 
     #[test]
-    pub fn advance_init_pass_no_further_passes()
+    pub fn advancing_to_next_initiative_pass_if_no_character_has_another_pass_results_in_error_end_of_initiative_pass()
     {
         init();
 
@@ -1327,12 +1428,24 @@ mod tests
         assert!(game.take_action(*ids.get(2).unwrap(), ActionType::Complex).is_ok());
         assert!(game.next_initiative().is_ok());
 
-        assert!(game.next_initiative_pass().is_err());
+        // assert!(game.next_initiative_pass().is_err());
+        match game.next_initiative_pass()
+        {
+            Ok(_) => {panic!("This should not have succeeded.")},
+            Err(err) => 
+            {
+                match err.kind
+                {
+                    crate::tracker::game::ErrorKind::EndOfInitiativePass => {},
+                    _ => {panic!("Test expected different error type (UnknownCastId)");}
+                }
+            },
+        }
 
     }
 
     #[test]
-    pub fn advance_init_pass_wrong_state()
+    pub fn advancing_to_next_pass_before_begin_combat_round_generates_unresolved_combatant()
     {
         init();
 
@@ -1348,11 +1461,24 @@ mod tests
         assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 20).is_ok());
         assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 33).is_ok());
         
-        assert!(game.next_initiative_pass().is_err());
+        // assert!(game.next_initiative_pass().is_err());
+        match game.next_initiative_pass()
+        {
+            Ok(_) => {panic!("This should not have succeeded.")},
+            Err(err) => 
+            {
+                match err.kind
+                {
+                    crate::tracker::game::ErrorKind::InvalidStateAction => {},
+                    _ => {panic!("Test expected different error type (UnknownCastId)");}
+                }
+            },
+        }
+        
     }
 
     #[test]
-    pub fn advance_initiative()
+    pub fn initiative_may_advance_when_all_combatants_at_current_initiative_have_resolved()
     {
         let zorc = build_orc();
         let melf = build_elf();
@@ -1378,7 +1504,7 @@ mod tests
     }
 
     #[test]
-    pub fn advance_initiative_unresolved()
+    pub fn advancing_initiative_before_starting_initiative_character_has_acted_generates_unresolved_combatant()
     {
         init();
 
@@ -1396,8 +1522,19 @@ mod tests
 
         assert!(game.start_combat_rounds().is_ok());
 
-        assert!(game.next_initiative().is_err());
-
+        // assert!(game.next_initiative().is_err());
+        match game.next_initiative()
+        {
+            Ok(_) => {panic!("This should not have succeeded.")},
+            Err(err) => 
+            {
+                match err.kind
+                {
+                    crate::tracker::game::ErrorKind::UnresolvedCombatant => {},
+                    _ => {panic!("Test expected different error type (UnknownCastId)");}
+                }
+            },
+        }
 
     }
 
@@ -1406,7 +1543,7 @@ mod tests
     // // or add some on-next-pass event.
 
     #[test]
-    pub fn take_simple_action()
+    pub fn a_resolving_character_can_take_two_simple_actions_but_not_one_simple_one_complex_nor_three_simple()
     {
         init();
 
@@ -1433,7 +1570,7 @@ mod tests
     }
 
     #[test]
-    pub fn take_complex_action()
+    pub fn a_resolving_character_may_take_one_complex_action_but_not_one_complex_one_single_or_two_complex()
     {
         init();
 
@@ -1458,7 +1595,7 @@ mod tests
     }
 
     #[test]
-    pub fn take_free_and_simple_action()
+    pub fn a_resolving_character_may_take_their_free_action_alongside_their_simple_actions()
     {
         init();
 
@@ -1483,7 +1620,7 @@ mod tests
     }
 
     #[test]
-    pub fn take_free_and_complex_action()
+    pub fn a_resolving_character_may_take_their_free_action_alongside_their_complex_action()
     {
         init();
 
@@ -1507,7 +1644,7 @@ mod tests
     }
 
     #[test]
-    pub fn take_free_on_anothers_turn()
+    pub fn any_character_may_take_their_free_action_on_any_turn()
     {
         init();
 
@@ -1532,7 +1669,7 @@ mod tests
     }
 
     #[test]
-    pub fn take_simple_on_anothers_turn()
+    pub fn a_character_not_resolving_may_not_take_a_simple_action()
     {
         init();
 
@@ -1557,7 +1694,7 @@ mod tests
     }
 
     #[test]
-    pub fn take_complex_on_anothers_turn()
+    pub fn a_character_not_resolving_may_not_take_a_complex_action()
     {
         init();
 
