@@ -40,8 +40,6 @@ pub async fn game_runner(mut message_queue: Receiver<Message>)
             },
             Event::AddInitiativeRoll(roll) => {
                 debug!("Request is to add an initiative roll.");
-                // let character_id = roll.character_id;
-                // let initiative_value = roll.roll;
                 response = find_game_and_act(&mut running_games, game_id, | game | { add_init_roll(roll, game)});
             },
             Event::BeginInitiativePhase => {
@@ -223,7 +221,7 @@ pub fn try_advance_turn(game: &mut Game) -> Outcome
 {
     let response: Outcome;
 
-    if let Err(err) = game.next_initiative()
+    if let Err(err) = game.advance_round()
     {
         match err.kind
         {
@@ -240,10 +238,10 @@ pub fn try_advance_turn(game: &mut Game) -> Outcome
     }
     else
     {
-        let up = match game.waiting_for(){ Some(filled) => filled, None => Vec::<Uuid>::new() };
-        let on_deck = match game.on_deck(){ Some(filled) => filled, None => Vec::<Uuid>::new() };
+        // let up = match game.waiting_for(){ Some(filled) => filled, None => Vec::<Uuid>::new() };
+        // let on_deck = match game.on_deck(){ Some(filled) => filled, None => Vec::<Uuid>::new() };
 
-        response = Outcome::TurnAdvanced(TurnAdvanced{ up: up, on_deck: on_deck });
+        response = Outcome::TurnAdvanced;
     }
 
     return response;
@@ -326,6 +324,13 @@ pub enum Event
     StartCombatRound,
     TakeAction(Action),
     AdvanceTurn,
+    AdvancePass,
+    EndCombat,
+    QueryCurrentState,
+    QueryMissingInitiatives,
+    QueryUnresolvedActors,
+    QueryOnDeckActors,
+    QueryAllCombatants,
     BeginEndOfTurn,
 }
 
@@ -341,7 +346,13 @@ pub enum Outcome
     InitiativeStatus(InitiativeState),
     CombatRoundStarted,
     ActionTaken,
-    TurnAdvanced(TurnAdvanced)
+    TurnAdvanced,
+    CombatEnded,
+    CurrentStateIs,
+    MissingInitiativesFor,
+    UnresolvedActorsAre,
+    OnDeckActorsAre,
+    AllCombatantsAre,
 }
 
 pub struct Action
@@ -401,6 +412,7 @@ mod tests
 
 
     use log::debug;
+    use tokio::sync::oneshot::Receiver;
     use tokio::sync::oneshot::channel;
     use tokio::sync::mpsc::channel as mpsc_channel;
     use tokio::sync::mpsc::Sender;
@@ -1077,8 +1089,9 @@ mod tests
     pub async fn begin_initiative_message_will_only_be_accepted_if_game_in_combat_phase_with_registered_combatants_or_action_round_ended()
     {
         let game_input_channel = init();
-        let (game_sender, game_receiver) = channel::<Outcome>();
-        let msg = Message { game_id: Uuid::new_v4(), reply_channel: game_sender, msg: Event::New };
+        let (mut game_sender, mut game_receiver) = channel::<Outcome>();
+        let mut _game_receiver: Receiver<Outcome>;
+        let mut msg = Message { game_id: Uuid::new_v4(), reply_channel: game_sender, msg: Event::New };
 
         assert!(game_input_channel.send(msg).await.is_ok());
         let game_id: Uuid;
@@ -1094,8 +1107,8 @@ mod tests
         let character1 = create_and_add_char(&game_input_channel, game_id).await;
         let character2 = create_and_add_char(&game_input_channel, game_id).await;
 
-        let (game_sender, game_receiver) = channel::<Outcome>();
-        let msg = Message { game_id, reply_channel: game_sender, msg: Event::BeginInitiativePhase };
+        (game_sender, game_receiver) = channel::<Outcome>();
+        msg = Message { game_id, reply_channel: game_sender, msg: Event::BeginInitiativePhase };
         assert!(game_input_channel.send(msg).await.is_ok());
 
         match game_receiver.await
@@ -1111,14 +1124,14 @@ mod tests
             Err(_) => {panic!("Message channel for game runner replies has errored out with no reply.")},
         }
 
-        let (game_sender, game_receiver) = channel::<Outcome>();
-        let msg = Message { game_id, reply_channel: game_sender, msg: Event::StartCombat(vec![character1, character2]) };
+        (game_sender, game_receiver) = channel::<Outcome>();
+        msg = Message { game_id, reply_channel: game_sender, msg: Event::StartCombat(vec![character1, character2]) };
         assert!(game_input_channel.send(msg).await.is_ok());
         assert!(game_receiver.await.is_ok());
 
-        let (game_sender, game_receiver) = channel::<Outcome>();
+        (game_sender, game_receiver) = channel::<Outcome>();
 
-        let msg = Message { game_id, reply_channel: game_sender, msg: Event::BeginInitiativePhase };
+        msg = Message { game_id, reply_channel: game_sender, msg: Event::BeginInitiativePhase };
         assert!(game_input_channel.send(msg).await.is_ok());
 
         match game_receiver.await
@@ -1135,22 +1148,67 @@ mod tests
             Err(_) => {panic!("Message channel for game runner replies has errored out with no reply.")}
         }
 
-        // let (game_sender, game_receiver) = channel::<ResponseMessage>();
-        // let msg = RequestMessage::BeginInitiativePhase(SimpleMessage { reply_channel: game_sender, game_id });
-        // assert!(game_input_channel.send(msg).await.is_ok());
+        (game_sender, game_receiver) = channel::<Outcome>();
+        msg = Message{game_id, reply_channel: game_sender, msg: Event::BeginInitiativePhase};
+        assert!(game_input_channel.send(msg).await.is_ok());
 
-        // match game_receiver.await
-        // {
-        //     Ok(response) =>
-        //     {
-        //         match response
-        //         {
-        //             ResponseMessage::Error(err) => {assert!(err.kind == ErrorKind::InvalidStateAction)}
-        //             _ => {panic!("Sending begin initiative round once combat phase started should produce an InitiativePhaseStarted response.")}
-        //         }
-        //     },
-        //     Err(_) => {panic!("Message channel for game runner replies has errored out with no reply.")}
-        // }
+        match game_receiver.await
+        {
+            Ok(response) =>
+            {
+                match response
+                {
+                    Outcome::Error(err) => {assert!(err.kind == ErrorKind::InvalidStateAction)}
+                    _ => {panic!("Sending begin initiative round once combat phase started should produce an InitiativePhaseStarted response.")}
+                }
+            },
+            Err(_) => {panic!("Message channel for game runner replies has errored out with no reply.")}
+        }
+
+        (game_sender, _game_receiver) = channel::<Outcome>();
+        msg = Message { game_id, reply_channel: game_sender, msg: Event::AddInitiativeRoll(Roll { character_id: character1, roll: 13 })};
+        assert!(game_input_channel.send(msg).await.is_ok());
+
+        (game_sender, _game_receiver) = channel::<Outcome>();
+        msg = Message { game_id, reply_channel: game_sender, msg: Event::AddInitiativeRoll(Roll { character_id: character2, roll: 23 })};
+        assert!(game_input_channel.send(msg).await.is_ok());
+
+        (game_sender, _game_receiver) = channel::<Outcome>();
+        msg = Message { game_id, reply_channel: game_sender, msg: Event::StartCombatRound};
+        assert!(game_input_channel.send(msg).await.is_ok());
+
+        (game_sender, _game_receiver) = channel::<Outcome>();
+        msg = Message { game_id, reply_channel: game_sender, msg: Event::TakeAction(Action { character_id: character2, action: ActionType::Complex })};
+        assert!(game_input_channel.send(msg).await.is_ok());
+
+        (game_sender, _game_receiver) = channel::<Outcome>();
+        msg = Message { game_id, reply_channel: game_sender, msg: Event::AdvanceTurn};
+        assert!(game_input_channel.send(msg).await.is_ok());
+
+        (game_sender, _game_receiver) = channel::<Outcome>();
+        msg = Message { game_id, reply_channel: game_sender, msg: Event::TakeAction(Action { character_id: character1, action: ActionType::Complex })};
+        assert!(game_input_channel.send(msg).await.is_ok());
+
+        (game_sender, _game_receiver) = channel::<Outcome>();
+        msg = Message { game_id, reply_channel: game_sender, msg: Event::AdvanceTurn};
+        assert!(game_input_channel.send(msg).await.is_ok());
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+        msg = Message{game_id, reply_channel: game_sender, msg: Event::BeginInitiativePhase};
+        assert!(game_input_channel.send(msg).await.is_ok());
+
+        match game_receiver.await
+        {
+            Ok(response) =>
+            {
+                match response
+                {
+                    Outcome::InitiativePhaseStarted => {}
+                    _ => {panic!("Sending begin initiative round once combat phase started should produce an InitiativePhaseStarted response.")}
+                }
+            },
+            Err(_) => {panic!("Message channel for game runner replies has errored out with no reply.")}
+        }
 
     }
 

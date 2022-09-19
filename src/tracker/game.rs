@@ -156,6 +156,32 @@ impl Game {
         return combatants;
     }
 
+    pub fn are_any_initiatives_outstanding(self: &mut Game) -> bool
+    {
+        for combatant in (&self.combatant_data).values() {
+            if !combatant.declared_initiative
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    pub fn collect_undeclared_initiatives(self: &mut Game) -> Vec<Uuid>
+    {
+        let mut undeclared = Vec::<Uuid>::new();
+
+        for (id, combatant) in &self.combatant_data
+        {
+            if !combatant.declared_initiative
+            {
+                undeclared.push(*id);
+            }
+        }
+
+        return undeclared;
+    }
 
     // ******************************************************************************************
     // State change methods
@@ -239,33 +265,6 @@ impl Game {
         self.current_state = State::Initiative;
 
         Ok(())
-    }
-
-    pub fn are_any_initiatives_outstanding(self: &mut Game) -> bool
-    {
-        for combatant in (&self.combatant_data).values() {
-            if !combatant.declared_initiative
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    pub fn collect_undeclared_initiatives(self: &mut Game) -> Vec<Uuid>
-    {
-        let mut undeclared = Vec::<Uuid>::new();
-
-        for (id, combatant) in &self.combatant_data
-        {
-            if !combatant.declared_initiative
-            {
-                undeclared.push(*id);
-            }
-        }
-
-        return undeclared;
     }
 
     pub fn accept_initiative_roll(self: &mut Game, character_id: Uuid, initiative: i8) -> Result<(), GameError>
@@ -408,7 +407,7 @@ impl Game {
 
     }
 
-    pub fn next_initiative(self: &mut Game) -> Result<(), GameError>
+    pub fn advance_round(self: &mut Game) -> Result<(), GameError>
     {
         if self.current_state != State::ActionRound
         {
@@ -912,7 +911,7 @@ mod tests
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Complex).is_ok());
         assert!(game.take_action(*ids.get(2).unwrap(), ActionType::Complex).is_ok());
 
-        assert!(game.next_initiative().is_ok());
+        assert!(game.advance_round().is_ok());
         assert_eq!(None, game.on_deck());
 
     }
@@ -1422,11 +1421,11 @@ mod tests
         assert!(game.start_combat_rounds().is_ok());
 
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Complex).is_ok());
-        assert!(game.next_initiative().is_ok());
+        assert!(game.advance_round().is_ok());
         assert!(game.take_action(*ids.get(0).unwrap(), ActionType::Complex).is_ok());
-        assert!(game.next_initiative().is_ok());
+        assert!(game.advance_round().is_ok());
         assert!(game.take_action(*ids.get(2).unwrap(), ActionType::Complex).is_ok());
-        assert!(game.next_initiative().is_ok());
+        assert!(game.advance_round().is_ok());
 
         // assert!(game.next_initiative_pass().is_err());
         match game.next_initiative_pass()
@@ -1495,11 +1494,11 @@ mod tests
         assert!(game.start_combat_rounds().is_ok());
 
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Complex).is_ok());
-        assert!(game.next_initiative().is_ok());
+        assert!(game.advance_round().is_ok());
         assert!(game.take_action(*ids.get(0).unwrap(), ActionType::Complex).is_ok());
-        assert!(game.next_initiative().is_ok());
+        assert!(game.advance_round().is_ok());
         assert!(game.take_action(*ids.get(2).unwrap(), ActionType::Complex).is_ok());
-        assert!(game.next_initiative().is_ok());
+        assert!(game.advance_round().is_ok());
         
     }
 
@@ -1523,7 +1522,7 @@ mod tests
         assert!(game.start_combat_rounds().is_ok());
 
         // assert!(game.next_initiative().is_err());
-        match game.next_initiative()
+        match game.advance_round()
         {
             Ok(_) => {panic!("This should not have succeeded.")},
             Err(err) => 
@@ -1563,10 +1562,10 @@ mod tests
 
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Simple).is_ok());
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Complex).is_err());
-        assert!(game.next_initiative().is_err());
+        assert!(game.advance_round().is_err());
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Simple).is_ok());
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Simple).is_err());
-        assert!(game.next_initiative().is_ok());
+        assert!(game.advance_round().is_ok());
     }
 
     #[test]
@@ -1591,7 +1590,7 @@ mod tests
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Complex).is_ok());
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Simple).is_err());
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Complex).is_err());
-        assert!(game.next_initiative().is_ok());
+        assert!(game.advance_round().is_ok());
     }
 
     #[test]
@@ -1616,7 +1615,7 @@ mod tests
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Free).is_ok());
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Simple).is_ok());
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Simple).is_ok());
-        assert!(game.next_initiative().is_ok());
+        assert!(game.advance_round().is_ok());
     }
 
     #[test]
@@ -1640,7 +1639,7 @@ mod tests
 
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Free).is_ok());
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Complex).is_ok());
-        assert!(game.next_initiative().is_ok());
+        assert!(game.advance_round().is_ok());
     }
 
     #[test]
@@ -1665,7 +1664,7 @@ mod tests
         assert!(game.take_action(*ids.get(2).unwrap(), ActionType::Free).is_ok());
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Simple).is_ok());
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Simple).is_ok());
-        assert!(game.next_initiative().is_ok());
+        assert!(game.advance_round().is_ok());
     }
 
     #[test]
@@ -1690,7 +1689,7 @@ mod tests
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Free).is_ok());
         assert!(game.take_action(*ids.get(2).unwrap(), ActionType::Simple).is_err());
         assert!(game.take_action(*ids.get(0).unwrap(), ActionType::Simple).is_err());
-        assert!(game.next_initiative().is_err());
+        assert!(game.advance_round().is_err());
     }
 
     #[test]
@@ -1714,7 +1713,7 @@ mod tests
 
         assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Free).is_ok());
         assert!(game.take_action(*ids.get(2).unwrap(), ActionType::Complex).is_err());
-        assert!(game.next_initiative().is_err());
+        assert!(game.advance_round().is_err());
     }
 
 
