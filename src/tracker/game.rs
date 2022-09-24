@@ -443,6 +443,15 @@ impl Game {
                 self.next_id.push(on_deck.0);
             }
         }
+        else
+        {
+            self.next_id.clear();
+        }
+
+        if self.current_turn_id.len() == 0
+        {
+            return Err(GameError::new(ErrorKind::EndOfInitiative, String::from("End of initiative order.")))
+        }
 
         Ok(())
     }
@@ -1425,7 +1434,7 @@ mod tests
         assert!(game.take_action(*ids.get(0).unwrap(), ActionType::Complex).is_ok());
         assert!(game.advance_round().is_ok());
         assert!(game.take_action(*ids.get(2).unwrap(), ActionType::Complex).is_ok());
-        assert!(game.advance_round().is_ok());
+        assert!(game.advance_round().is_err());
 
         // assert!(game.next_initiative_pass().is_err());
         match game.next_initiative_pass()
@@ -1498,7 +1507,7 @@ mod tests
         assert!(game.take_action(*ids.get(0).unwrap(), ActionType::Complex).is_ok());
         assert!(game.advance_round().is_ok());
         assert!(game.take_action(*ids.get(2).unwrap(), ActionType::Complex).is_ok());
-        assert!(game.advance_round().is_ok());
+        assert!(game.advance_round().is_err());
         
     }
 
@@ -1715,6 +1724,124 @@ mod tests
         assert!(game.take_action(*ids.get(2).unwrap(), ActionType::Complex).is_err());
         assert!(game.advance_round().is_err());
     }
+
+    #[test]
+    pub fn multiple_characters_may_have_same_initiative_and_may_act_together()
+    {
+        init();
+
+        let zorc = build_orc();
+        let melf = build_elf();
+        let dork = build_dwarf();
+
+        let mut game = Game::new();
+        let ids = populate!(&mut game, zorc, dork, melf);
+
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(0).unwrap(), 23).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 23).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 13).is_ok());
+
+        assert!(game.start_combat_rounds().is_ok());
+
+        assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Simple).is_ok());
+        assert!(game.take_action(*ids.get(0).unwrap(), ActionType::Complex).is_ok());
+        assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Simple).is_ok());
+
+    }
+
+    #[test]
+    pub fn advancing_the_initiative_round_before_all_active_characters_have_resolved_will_generate_unresolved_combatant()
+    {
+        init();
+
+        let zorc = build_orc();
+        let melf = build_elf();
+        let dork = build_dwarf();
+
+        let mut game = Game::new();
+        let ids = populate!(&mut game, zorc, dork, melf);
+
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(0).unwrap(), 23).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 23).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 13).is_ok());
+
+        assert!(game.start_combat_rounds().is_ok());
+        assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Simple).is_ok());
+        assert!(game.take_action(*ids.get(0).unwrap(), ActionType::Complex).is_ok());
+        
+        match game.advance_round()
+        {
+            Ok(_) => panic!("This should have failed."),
+            Err(err) => match err.kind
+            {
+                crate::tracker::game::ErrorKind::UnresolvedCombatant => {},
+                _ => {panic!("Advancing round without resolving all actions should generate UnresolvedCombatant type error.")}
+            },
+        }
+    }
+
+    #[test]
+    pub fn the_initiative_round_may_be_advanced_only_after_all_current_players_have_fully_resolved()
+    {
+        init();
+
+        let zorc = build_orc();
+        let melf = build_elf();
+        let dork = build_dwarf();
+
+        let mut game = Game::new();
+        let ids = populate!(&mut game, zorc, dork, melf);
+
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(0).unwrap(), 23).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 23).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 13).is_ok());
+
+        assert!(game.start_combat_rounds().is_ok());
+        assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Complex).is_ok());
+        assert!(game.take_action(*ids.get(0).unwrap(), ActionType::Complex).is_ok());
+
+        assert!(game.advance_round().is_ok());
+
+        assert!(game.take_action(*ids.get(2).unwrap(), ActionType::Simple).is_ok());
+    }
+
+    // TODO: Tests for Initiative Passes once passes are in.
+
+    #[test]
+    pub fn advancing_initiative_after_all_events_have_been_processed_results_in_end_of_initiative_error()
+    {
+        init();
+
+        let zorc = build_orc();
+        let melf = build_elf();
+
+        let mut game = Game::new();
+        let ids = populate!(&mut game, zorc, melf);
+
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(0).unwrap(), 23).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 23).is_ok());
+
+        assert!(game.start_combat_rounds().is_ok());
+        assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Complex).is_ok());
+        assert!(game.take_action(*ids.get(0).unwrap(), ActionType::Complex).is_ok());
+
+        match game.advance_round()
+        {
+            Ok(_) => panic!("No new events on deck to process this round!"),
+            Err(err) => {
+                match err.kind
+                {
+                    crate::tracker::game::ErrorKind::EndOfInitiative => {},
+                    _ => {panic!("Should indicate we have hit the end of the round with EndOfInitiative")}
+                }
+            },
+        }
+    }
+
 
 
 }

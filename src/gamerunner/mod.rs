@@ -233,6 +233,10 @@ pub fn try_advance_turn(game: &mut Game) -> Outcome
             {
                 response = Outcome::Error(Error{message: err.msg, kind: ErrorKind::CannotAdvanceTurn})
             },
+            crate::tracker::game::ErrorKind::EndOfInitiative =>
+            {
+                response = Outcome::Error(Error{message: err.msg, kind: ErrorKind::NoEventsLeft})
+            }
             _ => {unreachable!("Should not receive any other error from stepping the initiative forward.")}
         }
     }
