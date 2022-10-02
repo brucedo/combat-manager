@@ -346,7 +346,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_add_single()
+    pub fn adding_a_single_event_increases_event_counter_size_by_one()
     {
         let mut tracker = InitTracker::new(None);
         let fake_id = Uuid::new_v4();
@@ -357,7 +357,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_reset()
+    pub fn resetting_tracker_resets_pass_data_and_clears_all_initiatives()
     {
         let mut tracker = InitTracker::new(Some(15));
 
@@ -374,7 +374,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_on_next_pass()
+    pub fn on_next_pass_will_add_a_recurring_event_to_the_next_pass_in_the_current_initiative_round()
     {
         init();
 
@@ -394,7 +394,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_one_shot_next_pass()
+    pub fn one_shot_next_pass_will_add_an_event_to_the_next_pass_in_current_round_that_can_happen_only_once()
     {
         init();
 
@@ -428,7 +428,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_get_inits_random()
+    pub fn get_ordered_inits_will_retrieve_all_initiatives_in_an_ascending_order()
     {
         init();
 
@@ -451,7 +451,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_inits_match_ids()
+    pub fn initiatives_are_associated_with_their_event_id_even_after_sorting()
     {
         init();
 
@@ -484,7 +484,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_duplicate_inits_match_ids()
+    pub fn multiple_ids_with_the_same_initiative_do_not_get_lost_or_removed()
     {
         init();
 
@@ -508,7 +508,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_begin_pass()
+    pub fn begin_new_pass_must_be_called_to_start_the_very_first_pass_in_a_combat_round()
     {
         init();
 
@@ -526,7 +526,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_begin_pass_increments_pass()
+    pub fn calling_begin_new_pass_repeatedly_will_advance_the_pass_number()
     {
         init();
 
@@ -548,7 +548,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_begin_pass_on_empty()
+    pub fn begin_new_pass_against_an_empty_initiative_list_produces_pass_state_all_done()
     {
         init();
         
@@ -561,7 +561,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_begin_pass_with_overflow()
+    pub fn initiatives_added_to_overflow_will_migrate_into_regular_init_on_next_pass()
     {
         init();
         
@@ -586,7 +586,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_next()
+    pub fn calling_next_will_advance_tracker_current_id_to_next_on_initiative_order()
     {
         init();
 
@@ -611,7 +611,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_empty_next()
+    pub fn calling_next_with_an_empty_initiative_list_produces_pass_done()
     {
         init();
 
@@ -621,7 +621,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_multi_pass()
+    pub fn if_pass_done_is_reached_when_any_event_has_multiple_passes_then_that_event_will_be_present_on_the_next_pass()
     {
         init();
 
@@ -646,7 +646,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_end_turn_resets()
+    pub fn end_turn_resets_all_state_of_the_tracker()
     {
         init();
         
@@ -674,7 +674,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_set_astral()
+    pub fn enter_astral_and_exit_astral_will_generate_accepted_request()
     {
         init();
 
@@ -690,7 +690,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_set_astral_multi_pass()
+    pub fn enter_and_exit_astral_may_be_called_in_middle_of_pass()
     {
         init();
 
@@ -709,7 +709,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_fail_set_astral()
+    pub fn enter_and_exit_astral_when_invoked_with_an_unknown_id_generate_pass_state_unknown_id()
     {
         init();
 
@@ -724,7 +724,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_set_matrix()
+    pub fn login_logout_matrix_switch_tracker_to_use_that_events_matrix_pass()
     {
         init();
 
@@ -740,7 +740,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_set_matrix_multi_pass()
+    pub fn login_logout_matrix_can_be_called_in_mid_pass()
     {
         init();
 
@@ -759,7 +759,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_fail_set_matrix()
+    pub fn login_logout_matrix_will_generate_pass_state_unknow_id_when_provided_with_invalid_id()
     {
         init();
 
@@ -774,7 +774,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_advance_matrix_pass()
+    pub fn when_an_id_is_in_matrix_mode_will_get_as_many_passes_as_specified_matrix_passes()
     {
         init();
 
@@ -825,7 +825,7 @@ mod tests
     }
 
     #[test]
-    pub fn test_advance_astral_pass()
+    pub fn when_an_id_is_in_astral_mode_will_get_as_many_passes_as_specified_astral_passes()
     {
         init();
 
