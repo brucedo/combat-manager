@@ -144,8 +144,24 @@ fn try_initiative_phase(game: &mut Game) -> Outcome
             response = Outcome::InitiativePhaseStarted;
         },
         Err(game_err) => {
+            let runner_err: Error;
+            match game_err.kind
+            {
+                crate::tracker::game::ErrorKind::InvalidStateAction => 
+                {
+                    runner_err = Error {kind: ErrorKind::InvalidStateAction, message: game_err.msg}
+                },
+                crate::tracker::game::ErrorKind::UnknownCastId => 
+                {
+                    runner_err = Error {kind: ErrorKind::NoSuchCharacter, message: game_err.msg}
+                }
+                crate::tracker::game::ErrorKind::UnresolvedCombatant => 
+                {
+                    runner_err = Error {kind: ErrorKind::UnresolvedCombatant, message: game_err.msg}
+                },
+                _ => {unreachable!()}
+            }
             error!("Error returned from game.start_initiative_phase()");
-            let runner_err = Error {kind: ErrorKind::InvalidStateAction, message: game_err.msg};
             response = Outcome::Error(runner_err);
         },
     }
@@ -407,6 +423,7 @@ pub enum ErrorKind
     NoActionLeft,
     NotCharactersTurn,
     NoEventsLeft,
+    UnresolvedCombatant,
 }
 
 #[cfg(test)]
@@ -857,7 +874,7 @@ mod tests
                 match msg
                 {
                     Outcome::Error(kind) => {
-                        if kind.kind != ErrorKind::InvalidStateAction
+                        if kind.kind != ErrorKind::NoSuchCharacter
                         {
                             panic!("Expected InvalidStateAction error type to signify no characters in the combat set.");
                         }
@@ -1121,7 +1138,7 @@ mod tests
             {
                 match response
                 {
-                    Outcome::Error(err) => {assert!(err.kind == ErrorKind::InvalidStateAction)},
+                    Outcome::Error(err) => {assert!(err.kind == ErrorKind::NoSuchCharacter)},
                     _ => {panic!("Sending begin initiative to unprepared new game should generate error.")}
                 }
             },

@@ -261,8 +261,20 @@ impl Game {
                 ErrorKind::UnknownCastId, String::from("You may not begin an initiative round if no one is going to fight.")
             ))
         }
-        
+
+        if self.unresolved_turn() || self.on_deck().is_some()
+        {
+            debug!("There are still unresolved events this turn.");
+            return Err(GameError::new
+            (
+                ErrorKind::UnresolvedCombatant, String::from("There are still unresolved events this turn - you may not start the next turn.")
+            ))
+        }
+
         self.current_state = State::Initiative;
+        self.reset_actions();
+        self.init_tracker.end_turn();
+    
 
         Ok(())
     }
@@ -594,7 +606,13 @@ impl Game {
         Ok(())
     }
 
-
+    fn reset_actions(&mut self)
+    {
+        for (_id, data) in &mut self.combatant_data
+        {
+            data.reset();
+        }
+    }
 
 }
 
@@ -1160,9 +1178,6 @@ mod tests
     
         // transition into InitiativePass
         assert!(game.start_combat_rounds().is_ok());
-
-        // now try to jump right back to initiative roll
-        assert!(game.start_initiative_phase().is_ok());
 
     }
 
@@ -1842,6 +1857,84 @@ mod tests
         }
     }
 
+    #[test]
+    pub fn when_all_events_have_resolved_combat_may_move_back_to_initiative_phase()
+    {
+        init();
 
+        let zorc = build_orc();
+        let melf = build_elf();
+
+        let mut game = Game::new();
+        let ids = populate!(&mut game, zorc, melf);
+
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(0).unwrap(), 23).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 14).is_ok());
+
+        assert!(game.start_combat_rounds().is_ok());
+        assert!(game.take_action(*ids.get(0).unwrap(), ActionType::Complex).is_ok());
+        assert!(game.advance_round().is_ok());
+        assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Complex).is_ok());
+
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(0).unwrap(), 12).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 23).is_ok());
+
+        assert!(game.start_combat_rounds().is_ok());
+        assert!(game.take_action(*ids.get(0).unwrap(), ActionType::Complex).is_err());
+        assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Complex).is_ok());
+        assert!(game.advance_round().is_ok());
+        assert!(game.take_action(*ids.get(0).unwrap(), ActionType::Complex).is_ok());
+    }
+
+    #[test]
+    pub fn calling_start_initiative_phase_before_all_events_resolve_generates_unresolved_combatant()
+    {
+        init();
+
+        let zorc = build_orc();
+        let melf = build_elf();
+
+        let mut game = Game::new();
+        let ids = populate!(&mut game, zorc, melf);
+
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(0).unwrap(), 23).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 12).is_ok());
+
+        assert!(game.start_combat_rounds().is_ok());
+        assert!(game.take_action(*ids.get(0).unwrap(), ActionType::Complex).is_ok());
+        assert!(game.advance_round().is_ok());
+
+        match game.start_initiative_phase()
+        {
+            Ok(_) => {panic!("Attempting to start the initiative phase before all characters in the last turn resolve should have failed.")},
+            Err(err) => match err.kind
+            {
+                crate::tracker::game::ErrorKind::UnresolvedCombatant => {},
+                _ => {panic!("Attempting to start the initiative phase before all characters in the last turn resolve should have generated UnresolvedCombatant")}
+            },
+        }
+
+        assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Complex).is_ok());
+
+        assert!(game.start_initiative_phase().is_ok());
+
+        assert!(game.accept_initiative_roll(*ids.get(0).unwrap(), 13).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 16).is_ok());
+        assert!(game.start_combat_rounds().is_ok());
+        assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Complex).is_ok());
+
+        match game.start_initiative_phase()
+        {
+            Ok(_) => {panic!("Attempting to start the initiative phase before all on-deck characters resolve should have generated UnresolvedCombatant")},
+            Err(err) => match err.kind
+            {
+                crate::tracker::game::ErrorKind::UnresolvedCombatant => {},
+                _ => {panic!("Attempting to start the initiative phase before all on-deck characters resolve should have generated UnresolvedCombatant.")}
+            }
+        }
+    }
 
 }
