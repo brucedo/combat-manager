@@ -155,6 +155,85 @@ impl Game {
         }
     }
 
+    pub fn collect_all_remaining_events(self: &mut Game) -> Option<HashMap<i8, Vec<Uuid>>>
+    {
+        let events = self.init_tracker.get_ordered_inits();
+
+        if events.len() + self.current_turn_id.len() + self.next_id.len() == 0
+        {
+            return None;
+        }
+
+        let mut collection = HashMap::<i8, Vec<Uuid>>::new();
+
+        if !self.current_turn_id.is_empty()
+        {
+            match collection.entry(self.current_initiative) 
+            {
+                Entry::Occupied(mut entry) => 
+                {
+                    let temp = entry.get_mut();
+                    for id in &self.current_turn_id
+                    {
+                        temp.push(*id);
+                    }
+                },
+                Entry::Vacant(new_entry) =>
+                {
+                    let mut temp = Vec::<Uuid>::new();
+                    for id in &self.current_turn_id
+                    {
+                        temp.push(*id);
+                    }
+                    new_entry.insert(temp);
+                },
+            }
+        }
+
+        if !self.next_id.is_empty()
+        {
+            match collection.entry(self.next_initiative) 
+            {
+                Entry::Occupied(mut entry) => 
+                {
+                    let temp = entry.get_mut();
+                    for id in &self.next_id
+                    {
+                        temp.push(*id);
+                    }
+                },
+                Entry::Vacant(new_entry) =>
+                {
+                    let mut temp = Vec::<Uuid>::new();
+                    for id in &self.next_id
+                    {
+                        temp.push(*id);
+                    }
+                    new_entry.insert(temp);
+                },
+            }
+        }
+
+        for (init, event) in events
+        {
+            match collection.entry(init)
+            {
+                Entry::Occupied(mut entry) => 
+                {
+                    entry.get_mut().push(event)
+                },
+                Entry::Vacant(new_entry) =>
+                {
+                    let mut temp = Vec::<Uuid>::new();
+                    temp.push(event);
+                    new_entry.insert(temp);
+                },
+            }
+        }
+
+        return Some(collection);
+    }
+
     pub fn get_combatants(self: &Game) -> Vec<Uuid>
     {
         let mut combatants = Vec::<Uuid>::new();
@@ -1034,6 +1113,105 @@ mod tests
         assert!(game.advance_round().is_ok());
         assert_eq!(None, game.on_deck());
 
+    }
+
+    #[test]
+    pub fn collect_all_events_returns_all_initiatives_and_associated_events()
+    {
+        let mut game = Game::new();
+        let dorf = build_dwarf();
+        let mork = build_orc();
+        let belf = build_elf();
+
+        let ids = populate!(&mut game, dorf, mork, belf);
+
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(0).unwrap(), 9).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 12).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 12).is_ok());
+
+        let some = game.collect_all_remaining_events();
+        assert!(some.is_some());
+        let events = some.unwrap();
+        assert!(events.len() == 2);
+        assert!(events.contains_key(&12));
+        assert!(events.contains_key(&9));
+        assert!(events.get(&12).unwrap().len() == 2);
+        assert!(events.get(&12).unwrap().contains(ids.get(1).unwrap()));
+        assert!(events.get(&12).unwrap().contains(ids.get(2).unwrap()));
+        assert!(events.get(&9).unwrap().len() == 1);
+        assert!(events.get(&9).unwrap().contains(ids.get(0).unwrap()));
+    }
+
+    #[test]
+    pub fn collect_all_events_operates_in_all_phases()
+    {
+        let mut game = Game::new();
+        let dorf = build_dwarf();
+        let mork = build_orc();
+        let belf = build_elf();
+
+        let ids = populate!(&mut game, dorf, mork, belf);
+
+        assert!(game.collect_all_remaining_events().is_none());
+
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(0).unwrap(), 9).is_ok());
+        assert!(game.collect_all_remaining_events().is_some());
+        assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 12).is_ok());
+        assert!(game.collect_all_remaining_events().is_some());
+        assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 12).is_ok());
+        assert!(game.collect_all_remaining_events().is_some());
+
+        assert!(game.start_combat_rounds().is_ok());
+        assert!(game.collect_all_remaining_events().is_some());
+
+        let events = game.collect_all_remaining_events().unwrap();
+        assert!(events.len() == 2);
+        assert!(events.contains_key(&12));
+        assert!(events.contains_key(&9));
+        assert!(events.get(&12).unwrap().len() == 2);
+        assert!(events.get(&12).unwrap().contains(ids.get(1).unwrap()));
+        assert!(events.get(&12).unwrap().contains(ids.get(2).unwrap()));
+        assert!(events.get(&9).unwrap().len() == 1);
+        assert!(events.get(&9).unwrap().contains(ids.get(0).unwrap()));
+    }
+
+    #[test]
+    pub fn collect_all_events_captures_only_turns_that_have_not_fully_resolved()
+    {
+        let mut game = Game::new();
+        let dorf = build_dwarf();
+        let mork = build_orc();
+        let belf = build_elf();
+
+        let ids = populate!(&mut game, dorf, mork, belf);
+
+        assert!(game.collect_all_remaining_events().is_none());
+
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(0).unwrap(), 9).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 12).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 15).is_ok());
+
+        assert!(game.start_combat_rounds().is_ok());
+
+        assert!(game.take_action(*ids.get(2).unwrap(), ActionType::Complex).is_ok());
+        assert!(game.advance_round().is_ok());
+        
+        match game.collect_all_remaining_events()
+        {
+            Some(events) => 
+            {
+                assert!(events.len() == 2);
+                assert!(events.contains_key(&12));
+                assert!(events.contains_key(&9));
+                assert!(events.get(&12).unwrap().contains(ids.get(1).unwrap()));
+                assert!(events.get(&9).unwrap().contains(ids.get(0).unwrap()));
+            },
+            None => {panic!("Should have been at least two initiative rolls and events.");}
+        }
+        
     }
 
     #[test]

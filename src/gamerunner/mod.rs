@@ -61,11 +61,19 @@ pub async fn game_runner(mut message_queue: Receiver<Message>)
             }
             Event::WhoGoesThisTurn => {
                 debug!("Request is to see who is going this turn.");
-                response = find_game_and_act(&mut running_games, game_id, list_current_turn_actors);
+                response = find_game_and_act(&mut running_games, game_id, list_current_turn_events);
             }
-            Event::WhoHasNotGoneThisTurn => {
+            Event::WhatHasYetToHappenThisTurn => {
                 debug!("Request is to see who has yet to go.");
-                response = find_game_and_act(&mut running_games, game_id, list_unresolved_actors);
+                response = find_game_and_act(&mut running_games, game_id, list_unresolved_events);
+            }
+            Event::WhatHappensNextTurn => {
+                debug!("Request is to see what happens next turn.");
+                response = find_game_and_act(&mut running_games, game_id, list_next_turn_events);
+            }
+            Event::AllEventsThisPass => {
+                debug!("Request is for a full accounting of all events on this pass.");
+                response = find_game_and_act(&mut running_games, game_id, list_all_events_by_id_this_pass);
             }
             _ => { todo!()}
         }
@@ -303,14 +311,24 @@ fn take_action(game: &mut Game, action: Action) -> Outcome
     }
 }
 
-fn list_current_turn_actors(game: &mut Game) -> Outcome
+fn list_current_turn_events(game: &mut Game) -> Outcome
 {
-    Outcome::MatchingActorsAre(game.currently_up())
+    Outcome::MatchingEventsAre(game.currently_up())
 }
 
-fn list_unresolved_actors(game: &mut Game) -> Outcome
+fn list_unresolved_events(game: &mut Game) -> Outcome
 {
-    Outcome::MatchingActorsAre(game.waiting_for())
+    Outcome::MatchingEventsAre(game.waiting_for())
+}
+
+fn list_next_turn_events(game: &mut Game) -> Outcome
+{
+    Outcome::MatchingEventsAre(game.on_deck())
+}
+
+fn list_all_events_by_id_this_pass(game: &mut Game) -> Outcome
+{
+    Outcome::MatchingEventsById(game.collect_all_remaining_events())
 }
 
 fn find_game_and_act<F>(running_games: &mut HashMap<Uuid, Game>, game_id: Uuid, action: F) -> Outcome
@@ -367,8 +385,9 @@ pub enum Event
     QueryCurrentState,
     QueryMissingInitiatives,
     WhoGoesThisTurn,
-    WhoHasNotGoneThisTurn,
-    QueryOnDeckActors,
+    WhatHasYetToHappenThisTurn,
+    WhatHappensNextTurn,
+    AllEventsThisPass,
     QueryAllCombatants,
     BeginEndOfTurn,
 }
@@ -389,9 +408,8 @@ pub enum Outcome
     CombatEnded,
     CurrentStateIs,
     MissingInitiativesFor,
-    MatchingActorsAre(Option<Vec<Uuid>>),
-    UnresolvedActorsAre,
-    OnDeckActorsAre,
+    MatchingEventsAre(Option<Vec<Uuid>>),
+    MatchingEventsById(Option<HashMap<i8, Vec<Uuid>>>),
     AllCombatantsAre,
 }
 
