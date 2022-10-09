@@ -126,6 +126,18 @@ impl Game {
 
     }
 
+    pub fn currently_up(self: &Game) -> Option<Vec<Uuid>>
+    {
+        if self.current_turn_id.len() > 0
+        {
+            Some(self.current_turn_id.clone())
+        }
+        else
+        {
+            None
+        }
+    }
+
     pub fn on_deck(self: &Game) -> Option<Vec<Uuid>>
     {
         if self.current_state != State::ActionRound
@@ -797,6 +809,87 @@ mod tests
         let pre_remove_size = game.cast_size();
         game.retire_cast_member(id);
         assert_eq!(game.cast_size(), pre_remove_size - 1); 
+    }
+
+    #[test]
+    pub fn currently_up_produces_full_list_of_combatants_with_current_initiative()
+    {
+        let mut game = Game::new();
+        let dorf = build_dwarf();
+        let mork = build_orc();
+        let belf = build_elf();
+
+        let ids = populate!(&mut game, dorf, mork, belf);
+
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(0).unwrap(), 12).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 14).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 14).is_ok());
+
+        assert!(game.start_combat_rounds().is_ok());
+
+        match game.currently_up() 
+        {
+            Some(chars) => 
+            {
+                assert!(chars.contains(ids.get(1).unwrap()));
+                assert!(chars.contains(ids.get(2).unwrap()));
+                assert!(!chars.contains(ids.get(0).unwrap()));
+            },
+            None => {panic!("currently_up test failed: should have produced ids for both mork and belf.")}
+        }
+    }
+
+    #[test]
+    pub fn currently_up_excludes_combatants_before_and_after_current_init()
+    {
+        let mut game = Game::new();
+        let dorf = build_dwarf();
+        let mork = build_orc();
+        let belf = build_elf();
+
+        let ids = populate!(&mut game, dorf, mork, belf);
+
+        assert!(game.start_initiative_phase().is_ok());
+
+        assert!(game.accept_initiative_roll(*ids.get(0).unwrap(), 12).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 14).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 16).is_ok());
+
+        assert!(game.start_combat_rounds().is_ok());
+
+        assert!(game.take_action(*ids.get(2).unwrap(), ActionType::Complex).is_ok());
+        assert!(game.advance_round().is_ok());
+
+        match game.currently_up()
+        {
+            Some(chars) =>
+            {
+                assert!(chars.len() == 1);
+                assert!(chars.contains(ids.get(1).unwrap()));
+            }
+            None => {panic!("currently_up_excludes failed: should have returned at least one ID.")}
+        }
+    }
+
+    #[test]
+    pub fn currently_up_is_empty_before_action_rounds()
+    {
+        let mut game = Game::new();
+        let dorf = build_dwarf();
+        let mork = build_orc();
+        let belf = build_elf();
+
+        let ids = populate!(&mut game, dorf, mork, belf);
+
+        assert!(game.start_initiative_phase().is_ok());
+
+        assert!(game.accept_initiative_roll(*ids.get(0).unwrap(), 12).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 14).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 16).is_ok());
+
+        assert!(game.currently_up().is_none());
+
     }
 
     #[test]

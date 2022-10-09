@@ -59,6 +59,14 @@ pub async fn game_runner(mut message_queue: Receiver<Message>)
                 debug!("Request is to advance to the next event in the pass.");
                 response = find_game_and_act(&mut running_games, game_id, try_advance_turn);
             }
+            Event::WhoGoesThisTurn => {
+                debug!("Request is to see who is going this turn.");
+                response = find_game_and_act(&mut running_games, game_id, list_current_turn_actors);
+            }
+            Event::WhoHasNotGoneThisTurn => {
+                debug!("Request is to see who has yet to go.");
+                response = find_game_and_act(&mut running_games, game_id, list_unresolved_actors);
+            }
             _ => { todo!()}
         }
 
@@ -295,6 +303,16 @@ fn take_action(game: &mut Game, action: Action) -> Outcome
     }
 }
 
+fn list_current_turn_actors(game: &mut Game) -> Outcome
+{
+    Outcome::MatchingActorsAre(game.currently_up())
+}
+
+fn list_unresolved_actors(game: &mut Game) -> Outcome
+{
+    Outcome::MatchingActorsAre(game.waiting_for())
+}
+
 fn find_game_and_act<F>(running_games: &mut HashMap<Uuid, Game>, game_id: Uuid, action: F) -> Outcome
 where
     F: FnOnce(&mut Game) -> Outcome
@@ -348,7 +366,8 @@ pub enum Event
     EndCombat,
     QueryCurrentState,
     QueryMissingInitiatives,
-    QueryUnresolvedActors,
+    WhoGoesThisTurn,
+    WhoHasNotGoneThisTurn,
     QueryOnDeckActors,
     QueryAllCombatants,
     BeginEndOfTurn,
@@ -370,6 +389,7 @@ pub enum Outcome
     CombatEnded,
     CurrentStateIs,
     MissingInitiativesFor,
+    MatchingActorsAre(Option<Vec<Uuid>>),
     UnresolvedActorsAre,
     OnDeckActorsAre,
     AllCombatantsAre,
