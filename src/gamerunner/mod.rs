@@ -75,6 +75,18 @@ pub async fn game_runner(mut message_queue: Receiver<Message>)
                 debug!("Request is for a full accounting of all events on this pass.");
                 response = find_game_and_act(&mut running_games, game_id, list_all_events_by_id_this_pass);
             }
+            Event::NextInitiative => {
+                debug!("Request is to get the next initiative number.");
+                response = find_game_and_act(&mut running_games, game_id, next_initiative);
+            }
+            Event::CurrentInitiative => {
+                debug!("Request is to get the current initiative number.");
+                response = find_game_and_act(&mut running_games, game_id, current_initiative);
+            }
+            Event::AllRemainingInitiatives => {
+                debug!("Request is to get any initiatives that have not been fully resolved.");
+                response = find_game_and_act(&mut running_games, game_id, remaining_initiatives_are);
+            }
             _ => { todo!()}
         }
 
@@ -331,6 +343,21 @@ fn list_all_events_by_id_this_pass(game: &mut Game) -> Outcome
     Outcome::MatchingEventsById(game.collect_all_remaining_events())
 }
 
+fn next_initiative(game: &mut Game) -> Outcome
+{
+    Outcome::InitiativeIs(game.get_next_init())
+}
+
+fn current_initiative(game: &mut Game) -> Outcome
+{
+    Outcome::InitiativeIs(game.get_current_init())
+}
+
+fn remaining_initiatives_are(game: &mut Game) -> Outcome
+{
+    Outcome::InitiativesAre(game.get_all_remaining_initiatives())
+}
+
 fn find_game_and_act<F>(running_games: &mut HashMap<Uuid, Game>, game_id: Uuid, action: F) -> Outcome
 where
     F: FnOnce(&mut Game) -> Outcome
@@ -388,6 +415,9 @@ pub enum Event
     WhatHasYetToHappenThisTurn,
     WhatHappensNextTurn,
     AllEventsThisPass,
+    CurrentInitiative,
+    NextInitiative,
+    AllRemainingInitiatives,
     QueryAllCombatants,
     BeginEndOfTurn,
 }
@@ -410,6 +440,8 @@ pub enum Outcome
     MissingInitiativesFor,
     MatchingEventsAre(Option<Vec<Uuid>>),
     MatchingEventsById(Option<HashMap<i8, Vec<Uuid>>>),
+    InitiativeIs(Option<i8>),
+    InitiativesAre(Option<Vec<i8>>),
     AllCombatantsAre,
 }
 

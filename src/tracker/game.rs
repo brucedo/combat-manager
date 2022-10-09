@@ -234,6 +234,69 @@ impl Game {
         return Some(collection);
     }
 
+    pub fn get_current_init(self: &Game) -> Option<i8>
+    {
+        if self.current_state != State::ActionRound
+        {
+            None
+        }
+        else if self.current_turn_id.len() == 0
+        {
+            None
+        }
+        else
+        {
+            Some(self.current_initiative)
+        }
+    }
+
+    pub fn get_next_init(self: &Game) -> Option<i8>
+    {
+        if self.current_state != State::ActionRound
+        {
+            None
+        }
+        else if self.next_id.len() == 0
+        {
+            None
+        }
+        else
+        {
+            Some(self.next_initiative)
+        }
+    }
+
+    pub fn get_all_remaining_initiatives(self: &mut Game) -> Option<Vec<i8>>
+    {
+        let mut initiatives = Vec::<i8>::new();
+
+        for (init, _id) in self.init_tracker.get_ordered_inits()
+        {
+            initiatives.push(init);
+        }
+
+        if (self.next_id.len() > 0)
+        {
+            initiatives.push(self.next_initiative);
+        }
+
+        if (self.current_turn_id.len() > 0)
+        {
+            initiatives.push(self.current_initiative);
+        }
+
+        initiatives.dedup();
+
+        if initiatives.len() == 0
+        {
+            None
+        }
+        else
+        {
+            return Some(initiatives)
+        }
+    }
+
     pub fn get_combatants(self: &Game) -> Vec<Uuid>
     {
         let mut combatants = Vec::<Uuid>::new();
@@ -814,7 +877,7 @@ mod tests
     use log::debug;
     use uuid::Uuid;
 
-    use crate::tracker::{game::ActionType, character::{Character, Metatypes}};
+    use crate::tracker::{game::{ActionType, self}, character::{Character, Metatypes}};
 
     use super::Game;
 
@@ -1212,6 +1275,166 @@ mod tests
             None => {panic!("Should have been at least two initiative rolls and events.");}
         }
         
+    }
+
+    #[test]
+    pub fn calling_get_current_init_before_starting_combat_generates_none()
+    {
+        let mut game = Game::new();
+        let dorf = build_dwarf();
+        let mork = build_orc();
+        let belf = build_elf();
+
+        let ids = populate!(&mut game, dorf, mork, belf);
+
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(0).unwrap(), 9).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 12).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 15).is_ok());
+
+        assert!(game.get_current_init().is_none());
+    }
+
+    #[test]
+    pub fn calling_get_current_init_after_starting_combat_generates_current_init()
+    {
+        let mut game = Game::new();
+        let dorf = build_dwarf();
+        let mork = build_orc();
+        let belf = build_elf();
+
+        let ids = populate!(&mut game, dorf, mork, belf);
+
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(0).unwrap(), 9).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 12).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 15).is_ok());
+        assert!(game.start_combat_rounds().is_ok());
+
+        assert!(game.get_current_init().is_some());
+        assert!(game.get_current_init().unwrap() == 15);
+    }
+
+    #[test]
+    pub fn calling_get_next_init_before_starting_combat_generates_none()
+    {
+        let mut game = Game::new();
+        let dorf = build_dwarf();
+        let mork = build_orc();
+        let belf = build_elf();
+
+        let ids = populate!(&mut game, dorf, mork, belf);
+
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(0).unwrap(), 9).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 12).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 15).is_ok());
+
+        assert!(game.get_next_init().is_none());
+    }
+
+    #[test]
+    pub fn calling_get_next_init_after_starting_combat_generates_next_init()
+    {
+        let mut game = Game::new();
+        let dorf = build_dwarf();
+        let mork = build_orc();
+        let belf = build_elf();
+
+        let ids = populate!(&mut game, dorf, mork, belf);
+
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(0).unwrap(), 9).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 12).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 15).is_ok());
+        assert!(game.start_combat_rounds().is_ok());
+
+        assert!(game.get_next_init().is_some());
+        assert!(game.get_next_init().unwrap() == 12);
+    }
+
+    #[test]
+    pub fn calling_get_next_init_on_last_turn_generates_none()
+    {
+        let mut game = Game::new();
+        let dorf = build_dwarf();
+        let mork = build_orc();
+        let belf = build_elf();
+
+        let ids = populate!(&mut game, dorf, mork, belf);
+
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(0).unwrap(), 9).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 12).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 15).is_ok());
+        assert!(game.start_combat_rounds().is_ok());
+
+        assert!(game.take_action(*ids.get(2).unwrap(), ActionType::Complex).is_ok());
+        assert!(game.advance_round().is_ok());
+        assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Complex).is_ok());
+        assert!(game.advance_round().is_ok());
+        
+        assert!(game.get_next_init().is_none());
+    }
+
+    #[test]
+    pub fn get_all_remaining_initiatives_will_retrieve_all_unresolved_initiatives()
+    {
+        let mut game = Game::new();
+        let dorf = build_dwarf();
+        let mork = build_orc();
+        let belf = build_elf();
+
+        let ids = populate!(&mut game, dorf, mork, belf);
+
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(0).unwrap(), 9).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 12).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 15).is_ok());
+
+        assert!(game.start_combat_rounds().is_ok());
+
+        assert!(game.get_all_remaining_initiatives().is_some());
+        assert!(game.get_all_remaining_initiatives().unwrap().len() == 3);
+    }
+
+    #[test]
+    pub fn advancing_turn_will_remove_advanced_initiative_from_get_all_unresolved_list()
+    {
+        let mut game = Game::new();
+        let dorf = build_dwarf();
+        let mork = build_orc();
+        let belf = build_elf();
+
+        let ids = populate!(&mut game, dorf, mork, belf);
+
+        assert!(game.start_initiative_phase().is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(0).unwrap(), 9).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 12).is_ok());
+        assert!(game.accept_initiative_roll(*ids.get(2).unwrap(), 15).is_ok());
+
+        assert!(game.get_all_remaining_initiatives().is_some());
+        assert!(game.get_all_remaining_initiatives().unwrap().len() == 3);
+
+        assert!(game.start_combat_rounds().is_ok());
+
+        assert!(game.take_action(*ids.get(2).unwrap(), ActionType::Complex).is_ok());
+        assert!(game.advance_round().is_ok());
+        assert!(game.get_all_remaining_initiatives().is_some());
+        assert!(game.get_all_remaining_initiatives().unwrap().len() == 2);
+        assert!(game.get_all_remaining_initiatives().unwrap().contains(&9));
+        assert!(game.get_all_remaining_initiatives().unwrap().contains(&12));
+
+        assert!(game.take_action(*ids.get(1).unwrap(), ActionType::Complex).is_ok());
+        assert!(game.advance_round().is_ok());
+        assert!(game.get_all_remaining_initiatives().is_some());
+        assert!(game.get_all_remaining_initiatives().unwrap().len() == 1);
+        assert!(game.get_all_remaining_initiatives().unwrap().contains(&9));
+
+        assert!(game.take_action(*ids.get(0).unwrap(), ActionType::Complex).is_ok());
+        assert!(game.advance_round().is_err());
+        assert!(game.get_all_remaining_initiatives().is_none());
+
     }
 
     #[test]
