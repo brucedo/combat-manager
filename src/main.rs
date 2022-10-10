@@ -1,4 +1,5 @@
 use log::debug;
+use rocket::fs::{FileServer, relative};
 use rocket::routes;
 use tokio::sync::mpsc;
 
@@ -25,6 +26,7 @@ async fn main() {
 
     let _ = rocket::build()
         .manage(runner_sender)
+        .mount("/res", FileServer::from(relative!("resources")))
         .mount("/", routes![new_game, get_example_char, add_new_character, change_game_state, get_state_demo])
         .launch()
         .await;
