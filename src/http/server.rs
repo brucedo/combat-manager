@@ -216,7 +216,7 @@ async fn do_send(msg: Message, msg_channel: Sender<Message>, response_channel: O
 fn copy_character(character: &Character) -> crate::tracker::character::Character
 {
     let game_metatype: crate::tracker::character::Metatypes;
-    let mut game_char: crate::tracker::character::Character;
+    let game_char: crate::tracker::character::Character;
     match character.metatype
     {
         super::api::Metatypes::Human => game_metatype = crate::tracker::character::Metatypes::Human,

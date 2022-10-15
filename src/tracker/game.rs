@@ -275,12 +275,12 @@ impl Game {
             initiatives.push(init);
         }
 
-        if (self.next_id.len() > 0)
+        if self.next_id.len() > 0
         {
             initiatives.push(self.next_initiative);
         }
 
-        if (self.current_turn_id.len() > 0)
+        if self.current_turn_id.len() > 0
         {
             initiatives.push(self.current_initiative);
         }
@@ -816,8 +816,8 @@ enum State {
     PreCombat,
     Initiative,
     ActionRound,
-    PostRound,
-    Other,
+    // PostRound,
+    // Other,
 }
 
 impl State {
@@ -827,8 +827,8 @@ impl State {
             State::PreCombat => String::from("PreCombat"),
             State::Initiative => String::from("Initiative Rolls"),
             State::ActionRound => String::from("Initiative Pass"),
-            State::PostRound => String::from("End Of Round"),
-            State::Other => String::from("Other"),
+            // State::PostRound => String::from("End Of Round"),
+            // State::Other => String::from("Other"),
         }
     }
 }
@@ -874,10 +874,9 @@ pub enum GameValue {
 #[cfg(test)]
 mod tests
 {
-    use log::debug;
     use uuid::Uuid;
 
-    use crate::tracker::{game::{ActionType, self}, character::{Character, Metatypes}};
+    use crate::tracker::{game::{ActionType}, character::{Character, Metatypes}};
 
     use super::Game;
 
@@ -891,7 +890,7 @@ mod tests
                 let local_game: &mut Game = $game;
                 let mut ids = Vec::<Uuid>::new();
 
-                $(let char_id:Uuid = local_game.add_cast_member($char); local_game.add_combatant(char_id); ids.push(char_id);)*
+                $(let char_id:Uuid = local_game.add_cast_member($char); if let Err(_) = local_game.add_combatant(char_id) {panic!();}; ids.push(char_id);)*
 
                 ids
             }
@@ -1812,14 +1811,14 @@ mod tests
         assert!(game.collect_undeclared_initiatives().contains(ids.get(0).unwrap()));
         assert!(game.collect_undeclared_initiatives().contains(ids.get(1).unwrap()));
 
-        let result = game.accept_initiative_roll(*ids.get(0).unwrap(), 23);
+        assert!(game.accept_initiative_roll(*ids.get(0).unwrap(), 23).is_ok());
 
         assert!(game.are_any_initiatives_outstanding());
         assert!(game.collect_undeclared_initiatives().len() == 1);
         assert!(game.collect_undeclared_initiatives().contains(ids.get(1).unwrap()));
         assert!(!game.collect_undeclared_initiatives().contains(ids.get(0).unwrap()));
 
-        let result = game.accept_initiative_roll(*ids.get(1).unwrap(), 12);
+        assert!(game.accept_initiative_roll(*ids.get(1).unwrap(), 12).is_ok());
         assert!(!game.are_any_initiatives_outstanding());
         assert!(game.collect_undeclared_initiatives().len() == 0);
     }

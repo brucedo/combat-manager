@@ -1,4 +1,4 @@
-use log::debug;
+use log::{debug, error};
 use rocket::fs::{FileServer, relative};
 use rocket::routes;
 use tokio::sync::mpsc;
@@ -16,6 +16,17 @@ async fn main() {
     env_logger::init();
     
     debug!("Beginning launch of Shadowrun Combat Manager");
+    if let Ok(home_dir) = std::env::current_dir()
+    {
+        if let Some(home_dir_str) = home_dir.to_str()
+        {
+            debug!("Current directory: {}", home_dir_str);
+        }
+        else
+        {
+            error!("You've done it again, Kif: we don't have a directory.");
+        }
+    }
 
     let (runner_sender, runner_receiver) = mpsc::channel::<Message>(10);
 
@@ -26,7 +37,7 @@ async fn main() {
 
     let _ = rocket::build()
         .manage(runner_sender)
-        .mount("/res", FileServer::from(relative!("resources")))
+        .mount("/res", FileServer::from(relative!("resources/static")))
         .mount("/", routes![new_game, get_example_char, add_new_character, change_game_state, get_state_demo])
         .launch()
         .await;

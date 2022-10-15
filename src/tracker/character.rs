@@ -1,7 +1,5 @@
 use std::collections::{HashMap, HashSet};
 
-use uuid::Uuid;
-
 use super::gear::{Weapon, Armour};
 
 pub struct Character

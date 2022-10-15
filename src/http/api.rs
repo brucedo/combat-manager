@@ -1,6 +1,4 @@
-use std::marker::PhantomData;
-
-use rocket::serde::{Serialize, self, Deserialize};
+use rocket::serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
 
