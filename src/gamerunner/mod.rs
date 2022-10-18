@@ -22,6 +22,10 @@ pub async fn game_runner(mut message_queue: Receiver<Message>)
         let channel: tokio::sync::oneshot::Sender<Outcome> = message.reply_channel;
         let game_id = message.game_id;
         match message.msg {
+            Event::Enumerate => {
+                debug!("Request is for a list of running games.");
+                response = enumerate(&mut running_games);
+            }
             Event::New => {
                 debug!("Request is for new game.");
                 response = new_game(&mut running_games);
@@ -95,6 +99,20 @@ pub async fn game_runner(mut message_queue: Receiver<Message>)
             error!("The return channel has dropped.");
         }
     }
+}
+
+fn enumerate(running_games: &mut HashMap<Uuid, Game> ) -> Outcome
+{
+    let response: Outcome;
+
+    let mut enumeration = Vec::<(Uuid, String)>::with_capacity(running_games.capacity());
+    
+    for (id, game) in running_games 
+    {
+        enumeration.push((*id, String::from("")));
+    }
+
+    return Outcome::Summaries(enumeration);
 }
 
 fn new_game(running_games: &mut HashMap<Uuid, Game>) -> Outcome
@@ -397,6 +415,7 @@ pub struct Message
 
 pub enum Event
 {
+    Enumerate,
     New,
     Delete,
     AddCharacter(Character),
@@ -424,6 +443,7 @@ pub enum Event
 
 pub enum Outcome
 {
+    Summaries(Vec<(Uuid, String)>),
     Created(Uuid),
     Destroyed,
     Error(Error),
@@ -593,6 +613,76 @@ mod tests
                 }
             },
             Err(_) => {panic!("Channel closed.")}
+        }
+    }
+
+    #[tokio::test]
+    pub async fn enumerating_games_before_creating_a_game_will_return_an_empty_list()
+    {
+        let game_input_channel = init();
+        let (game_sender, game_receiver) = channel();
+
+        let msg = Message{ game_id: Uuid::new_v4(), reply_channel: game_sender, msg: Event::Enumerate };
+        assert!(game_input_channel.send(msg).await.is_ok());
+
+        match game_receiver.await
+        {
+            Ok(outcome) => 
+            {
+                match outcome
+                {
+                    Outcome::Summaries(summaries) => 
+                    {
+                        assert!(summaries.len() == 0);
+                    },
+                    _ => { panic!("Should have recieved an Outcome::Summaries with an empty vec.")}
+                }
+            },
+            Err(_) => {panic!("The oneshot receiver channel terminated unexpectedly!")},
+        }
+    }
+
+    #[tokio::test]
+    pub async fn enumerating_games_after_creating_games_returns_non_empty_vec()
+    {
+        let game_input_channel = init();
+        let (game_sender, game_receiver) = channel();
+
+        let msg = Message{ game_id: Uuid::new_v4(), reply_channel: game_sender, msg: Event::New };
+        assert!(game_input_channel.send(msg).await.is_ok());
+
+        let id: Uuid;
+
+        if let Ok(outcome) = game_receiver.await
+        {
+            match outcome 
+            {
+                Outcome::Created(game_id) => { id = game_id },
+                _ => { panic!("Should have been a created message.")}
+            }
+        }
+        else { panic!("game_receiver errored out."); }
+
+        let (game_sender, game_receiver) = channel();
+
+        let msg = Message{ game_id: Uuid::new_v4(), reply_channel: game_sender, msg: Event::Enumerate };
+        assert!(game_input_channel.send(msg).await.is_ok());
+
+        match game_receiver.await
+        {
+            Ok(outcome) => 
+            {
+                match outcome
+                {
+                    Outcome::Summaries(summaries) => 
+                    {
+                        assert!(summaries.len() == 1);
+                        assert!(summaries.get(0).unwrap().0 == id);
+                    },
+                    _ => { panic!("Should have recieved an Outcome::Summaries with an empty vec.")}
+                }
+            },
+            Err(_) => {panic!("The oneshot receiver channel terminated unexpectedly!")},
         }
     }
 

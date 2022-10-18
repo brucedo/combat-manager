@@ -2,7 +2,13 @@ use rocket::serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
 
-
+#[derive(Serialize, Deserialize)]
+#[serde(crate = "rocket::serde")]
+pub struct GameSummary
+{
+    pub game_name: String,
+    pub game_id: Uuid,
+}
 
 #[derive(Serialize, Deserialize)]
 #[serde(crate = "rocket::serde")]

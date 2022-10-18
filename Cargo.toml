@@ -32,3 +32,6 @@ features = [
     "json",
     "uuid"
 ]
+
+[dependencies.rocket_dyn_templates]
+features = ["handlebars"]

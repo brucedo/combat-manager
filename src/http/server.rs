@@ -5,9 +5,9 @@ use tokio::sync::{mpsc::Sender, oneshot::channel};
 use tokio::sync::oneshot::Receiver as OneShotReceiver;
 use uuid::Uuid;
 
-use crate::{gamerunner::{Event, Outcome, Roll, Message}, http::api::{NewGameJson, InitiativeRoll},};
+use crate::{gamerunner::{Event, Outcome, Roll, Message}, http::serde::{NewGameJson, InitiativeRoll},};
 
-use super::api::{Character, AddedCharacterJson, NewState, BeginCombat};
+use super::serde::{Character, AddedCharacterJson, NewState, BeginCombat};
 
 
 #[post("/api/game/new")]
@@ -48,7 +48,7 @@ pub fn get_example_char <'r> () -> Json<Character<'r>>
 {
     let example = Character {
         pc: true,
-        metatype: super::api::Metatypes::Human,
+        metatype: super::serde::Metatypes::Human,
         name: "Mooman",
     };
 
@@ -64,7 +64,7 @@ pub fn get_state_demo() -> Json<NewState>
     ids.push(Uuid::new_v4());
     ids.push(Uuid::new_v4());
 
-    let change = NewState { to_state: super::api::State::Combat(BeginCombat { participants: ids }) };
+    let change = NewState { to_state: super::serde::State::Combat(BeginCombat { participants: ids }) };
 
     Json(change)
 }
@@ -116,21 +116,21 @@ pub async fn change_game_state(id: Uuid, new_state: Json<NewState>, state: &Stat
 
     msg = match &new_state.to_state
     {
-        super::api::State::Combat(combat_data) => {
+        super::serde::State::Combat(combat_data) => {
             // msg = RequestMessage::StartCombat(CombatSetup { reply_channel: game_sender, game_id: id, combatants: combat_data.participants.clone() });
             Message{ game_id: id, reply_channel: game_sender, msg: Event::StartCombat(combat_data.participants.clone()) }
             
         },
-        super::api::State::InitiativeRolls => {
+        super::serde::State::InitiativeRolls => {
             // RequestMessage::BeginInitiativePhase(SimpleMessage{reply_channel: game_sender, game_id: id})
             Message { game_id: id, reply_channel: game_sender, msg: Event::BeginInitiativePhase }
         },
-        super::api::State::InitiativePass => 
+        super::serde::State::InitiativePass => 
         {
             // RequestMessage::StartCombatRound(SimpleMessage{reply_channel: game_sender, game_id: id})
             Message { game_id: id, reply_channel: game_sender, msg: Event::StartCombatRound }
         },
-        super::api::State::EndOfTurn => {Message { game_id: id, reply_channel: game_sender, msg: Event::BeginEndOfTurn }},
+        super::serde::State::EndOfTurn => {Message { game_id: id, reply_channel: game_sender, msg: Event::BeginEndOfTurn }},
     };
 
     match do_send(msg, msg_channel, game_receiver).await
@@ -219,11 +219,11 @@ fn copy_character(character: &Character) -> crate::tracker::character::Character
     let game_char: crate::tracker::character::Character;
     match character.metatype
     {
-        super::api::Metatypes::Human => game_metatype = crate::tracker::character::Metatypes::Human,
-        super::api::Metatypes::Dwarf => game_metatype = crate::tracker::character::Metatypes::Dwarf,
-        super::api::Metatypes::Elf => game_metatype = crate::tracker::character::Metatypes::Elf,
-        super::api::Metatypes::Troll => game_metatype = crate::tracker::character::Metatypes::Troll,
-        super::api::Metatypes::Orc => game_metatype = crate::tracker::character::Metatypes::Orc,
+        super::serde::Metatypes::Human => game_metatype = crate::tracker::character::Metatypes::Human,
+        super::serde::Metatypes::Dwarf => game_metatype = crate::tracker::character::Metatypes::Dwarf,
+        super::serde::Metatypes::Elf => game_metatype = crate::tracker::character::Metatypes::Elf,
+        super::serde::Metatypes::Troll => game_metatype = crate::tracker::character::Metatypes::Troll,
+        super::serde::Metatypes::Orc => game_metatype = crate::tracker::character::Metatypes::Orc,
     }
 
     if character.pc
