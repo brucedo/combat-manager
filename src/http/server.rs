@@ -5,13 +5,13 @@ use tokio::sync::{mpsc::Sender, oneshot::channel};
 use tokio::sync::oneshot::Receiver as OneShotReceiver;
 use uuid::Uuid;
 
-use crate::{gamerunner::{Event, Outcome, Roll, Message}, http::serde::{NewGameJson, InitiativeRoll},};
+use crate::{gamerunner::{Event, Outcome, Roll, Message}, http::serde::{NewGame, InitiativeRoll},};
 
 use super::serde::{Character, AddedCharacterJson, NewState, BeginCombat};
 
 
 #[post("/api/game/new")]
-pub async fn new_game(state: &State<Sender<Message>>) -> Result<Json<NewGameJson>, (Status, String)>
+pub async fn new_game(state: &State<Sender<Message>>) -> Result<Json<NewGame>, (Status, String)>
 {
     debug!("Request received to generate new game.");
     let msg_channel = state.inner().clone();
@@ -26,7 +26,7 @@ pub async fn new_game(state: &State<Sender<Message>>) -> Result<Json<NewGameJson
             match game_msg {
                 Outcome::Created(id) => {
                     debug!("Game created.  ID: {}", id);
-                    return Ok(Json(NewGameJson{game_id: id}));
+                    return Ok(Json(NewGame{game_id:Some(id), game_name: String::from(""), gm_id: None, gm_name: String::from("") }));
                 },
                 Outcome::Error(err) => {
                     debug!("Game creation error.  Message: {}", err.message);

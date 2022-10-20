@@ -1,6 +1,7 @@
 use log::{debug, error};
 use rocket::fs::{FileServer, relative};
 use rocket::routes;
+use rocket_dyn_templates::Template;
 use tokio::sync::mpsc;
 
 pub mod tracker;
@@ -9,6 +10,7 @@ pub mod gamerunner;
 
 use crate::gamerunner::Message;
 use crate::http::server::{new_game, get_example_char, add_new_character, change_game_state, get_state_demo};
+use crate::http::renders::{index, create_game, gm_view};
 
 #[rocket::main]
 async fn main() {
@@ -38,7 +40,9 @@ async fn main() {
     let _ = rocket::build()
         .manage(runner_sender)
         .mount("/res", FileServer::from(relative!("resources/static")))
-        .mount("/", routes![new_game, get_example_char, add_new_character, change_game_state, get_state_demo])
+        .mount("/", routes![index, create_game, gm_view])
+        .mount("/api", routes![new_game, get_example_char, add_new_character, change_game_state, get_state_demo])
+        .attach(Template::fairing())
         .launch()
         .await;
 }

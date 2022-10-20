@@ -1,1 +1,2 @@
-template_dir=resources/templates
+[global]
+template_dir="resources/templates"

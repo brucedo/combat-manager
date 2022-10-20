@@ -12,9 +12,26 @@ pub struct GameSummary
 
 #[derive(Serialize, Deserialize)]
 #[serde(crate = "rocket::serde")]
-pub struct NewGameJson
+pub struct GameSummaries
+{
+    pub games: Vec<GameSummary>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(crate = "rocket::serde")]
+pub struct GMView
 {
     pub game_id: Uuid,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(crate = "rocket::serde")]
+pub struct NewGame
+{
+    pub game_id: Option<Uuid>,
+    pub game_name: String,
+    pub gm_id: Option<Uuid>,
+    pub gm_name: String,
 }
 
 #[derive(Serialize, Deserialize)]
