@@ -5,7 +5,22 @@
 <body>
     <h1>SCM: The Shadowrun Combat Manager for Us Normies</h1>
 <p>Welcome to the SCM.  Please select from one of the ongoing games below.  Or, if you prefer, start your own!</p>
+
+<div>
 {{#each games}}
-<p>{{game_name}} - {{game_id}}</p>
+    <p>{{game_name}} - {{game_id}}</p>
 {{/each}}
+</div>
+
+<div>
+    <form action="/game" method="post">
+        <div>
+            <label for="name" id="name_label">Game name:</label>
+            <input type="text" name="name_input" id="name_input" required>
+        </div>
+        <div>
+            <input type="submit" value="Create Game">
+        </div>
+    </form>
+</div>
 </body>
