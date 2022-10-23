@@ -6,18 +6,18 @@ use tokio::sync::{mpsc::Sender, oneshot::channel};
 
 use crate::gamerunner::{Message, Event, Outcome};
 
-use super::serde::{GameSummary, GameSummaries, GMView};
+use super::{serde::{GameSummary, GameSummaries, GMView}, errors::Error};
 
 #[get("/")]
-pub async fn index(state: &State<Sender<Message>>) -> Template
+pub async fn index(state: &State<Sender<Message>>) -> Result<Template, Error>
 {
     let my_sender = state.inner().clone();
     let (their_sender, my_receiver) = channel();
     let msg = Message {game_id: Uuid::new_v4(), msg: Event::Enumerate, reply_channel: their_sender};
 
-    if let Err(_err) = my_sender.send(msg).await
+    if let Err(err) = my_sender.send(msg).await
     {
-
+        return Err(Error::InternalServerError(Template::render("error_pages/500", context! {action_name: "create a new game", error: err.to_string()})));
     }
 
     let mut model = Vec::<GameSummary>::new();
@@ -41,11 +41,11 @@ pub async fn index(state: &State<Sender<Message>>) -> Template
     }
 
 
-    return Template::render("index", GameSummaries{games: model});
+    return Ok(Template::render("index", GameSummaries{games: model}));
 }
 
 #[post("/game")]
-pub async fn create_game(state: &State<Sender<Message>>) -> Result<Redirect, Template>
+pub async fn create_game(state: &State<Sender<Message>>) -> Result<Redirect, Error>
 {
     let my_sender = state.inner().clone();
 
@@ -54,26 +54,29 @@ pub async fn create_game(state: &State<Sender<Message>>) -> Result<Redirect, Tem
 
     if let Err(err) = my_sender.send(msg).await
     {
-        return Err(Template::render("error_pages/500", context! {action_name: "create a new game", error: err.to_string()}));
+        return Err(Error::InternalServerError(Template::render("error_pages/500", context! {action_name: "create a new game", error: err.to_string()})));
     }
-
 
     match my_receiver.await
     {
         Ok(response) => 
         {
-            if let Outcome::Created(game_id) = response
-            {   
-                Ok(Redirect::to(uri!(gm_view(game_id))))
-            }
-            else
+            match response
             {
-                return Err(Template::render("error_pages/500", context! {action_name: "create a new game", error: "Unexpected response type from GameRunner."}));
+                Outcome::Created(game_id) =>
+                {   
+                    Ok(Redirect::to(uri!(gm_view(game_id))))
+                }
+                _ =>
+                {
+                    let err = "Boy howdy, something really went south here.  We received a completely unexpected message type from the GameRunner for creating a game.";
+                    return Err(Error::InternalServerError(Template::render("error_pages/500", context! {action_name: "create a new game", error: err})));
+                }
             }
         },
         Err(err) => 
         {
-            return Err(Template::render("error_pages/500", context! {action_name: "create a new game", error: err.to_string()}));
+            return Err(Error::InternalServerError(Template::render("error_pages/500", context! {action_name: "create a new game", error: err.to_string()})));
         },
     }
 
