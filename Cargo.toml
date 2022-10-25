@@ -35,3 +35,6 @@ features = [
 
 [dependencies.rocket_dyn_templates]
 features = ["handlebars"]
+
+[dependencies.parking_lot]
+version = "0.12.1"

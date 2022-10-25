@@ -42,7 +42,7 @@ async fn main() {
     // tokio::spawn(async move {launch_server(main_sender.clone()).await;});
     tokio::spawn(async move {gamerunner::game_runner(runner_receiver).await;});
 
-    let mut session_map = SessionMap { sessions: Arc::new(HashMap::<Uuid, Session>::new()) };
+    let mut session_map = SessionMap { sessions: HashMap::<Uuid, Session>::new() };
 
     let _ = rocket::build()
         .manage(runner_sender)

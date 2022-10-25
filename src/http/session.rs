@@ -2,20 +2,38 @@ use std::{sync::Arc, collections::HashMap};
 use core::pin::Pin;
 use core::future::Future;
 use core::marker::Send;
+use parking_lot::{RwLock, Mutex};
 use rocket::{Request, request::{FromRequest, Outcome}};
 use uuid::Uuid;
 
 use super::errors::Error;
 
-
-pub struct Session
+pub struct SessionData
 {
     pub gm_of_games: Vec<Uuid>
 }
 
+pub struct Session
+{
+    session_data: Mutex<SessionData>
+}
+
 pub struct SessionMap
 {
-    pub sessions: Arc<HashMap<Uuid, Session>>
+    sessions: RwLock<HashMap<Uuid, Session>>
+}
+
+pub fn new() -> SessionMap
+{
+    SessionMap { sessions: RwLock::new(HashMap::new()) }
+}
+
+impl SessionMap
+{
+    pub fn find_session(id: Uuid) -> Option<&Session>
+    {
+
+    }
 }
 
 #[rocket::async_trait]
@@ -36,8 +54,8 @@ impl<'r> FromRequest<'r> for Session
                     Ok(temp) => { session_id = temp; },
                     Err(_) =>  {todo!()}
                 }
-                
-                let mut map = request.rocket().state::<SessionMap>().unwrap();
+
+                let mut map = request.rocket().state::<SessionMap>();
                 
 
                 match map.sessions.entry(session_id)
