@@ -10,8 +10,9 @@ pub mod http;
 pub mod gamerunner;
 
 use crate::gamerunner::Message;
+use crate::http::metagame::Metagame;
 use crate::http::server::{new_game, get_example_char, add_new_character, change_game_state, get_state_demo};
-use crate::http::renders::{index, create_game, gm_view, no_session, new_session};
+use crate::http::renders::{index, create_game, game_view, no_session, new_session};
 use crate::http::session::SessionMap;
 
 #[rocket::main]
@@ -40,12 +41,13 @@ async fn main() {
     tokio::spawn(async move {gamerunner::game_runner(runner_receiver).await;});
 
     let session_map = SessionMap::new();
+    let game_state = Metagame::new(runner_sender);
 
     let _ = rocket::build()
-        .manage(runner_sender)
+        .manage(game_state)
         .manage(session_map)
         .mount("/res", FileServer::from(relative!("resources/static")))
-        .mount("/", routes![index, create_game, gm_view, no_session, new_session])
+        .mount("/", routes![index, create_game, game_view, no_session, new_session])
         .mount("/api", routes![new_game, get_example_char, add_new_character, change_game_state, get_state_demo])
         .attach(Template::fairing())
         .launch()

@@ -4,28 +4,6 @@ use uuid::Uuid;
 
 #[derive(Serialize, Deserialize)]
 #[serde(crate = "rocket::serde")]
-pub struct GameSummary
-{
-    pub game_name: String,
-    pub game_id: Uuid,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(crate = "rocket::serde")]
-pub struct GameSummaries
-{
-    pub games: Vec<GameSummary>,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(crate = "rocket::serde")]
-pub struct GMView
-{
-    pub game_id: Uuid,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(crate = "rocket::serde")]
 pub struct NewGame
 {
     pub game_id: Option<Uuid>,

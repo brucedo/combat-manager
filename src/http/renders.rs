@@ -1,17 +1,20 @@
+use std::str::FromStr;
+
 use log::debug;
-use rocket::{get, post, State, response::Redirect, uri};
+use rocket::{get, post, State, response::Redirect, uri, form::{FromForm, Form}, http::hyper::Uri};
 use rocket_dyn_templates::{Template, context};
 use uuid::Uuid;
 use tokio::sync::{mpsc::Sender, oneshot::channel};
 
 use crate::{gamerunner::{Message, Event, Outcome}, http::session::NewSessionOutcome};
 
-use super::{serde::{GameSummary, GameSummaries, GMView}, errors::Error, session::Session};
+use super::{models::{GameSummary, GameSummaries, GMView, IndexModel}, errors::Error, session::Session, metagame::Metagame};
 
 #[get("/")]
-pub async fn index(state: &State<Sender<Message>>, session: Session) -> Result<Template, Error>
+pub async fn index(state: &State<Metagame>, session: Session) -> Result<Template, Error>
 {
-    let my_sender = state.inner().clone();
+
+    let my_sender = state.game_runner_pipe.clone();
     let (their_sender, my_receiver) = channel();
     let msg = Message {game_id: Uuid::new_v4(), msg: Event::Enumerate, reply_channel: their_sender};
 
@@ -20,7 +23,7 @@ pub async fn index(state: &State<Sender<Message>>, session: Session) -> Result<T
         return Err(Error::InternalServerError(Template::render("error_pages/500", context! {action_name: "create a new game", error: err.to_string()})));
     }
 
-    let mut model = Vec::<GameSummary>::new();
+    let mut summaries = Vec::<GameSummary>::new();
     match my_receiver.await
     {
         Ok(enum_outcome) => 
@@ -31,7 +34,7 @@ pub async fn index(state: &State<Sender<Message>>, session: Session) -> Result<T
                 {
                     for (id, name) in summary
                     {
-                        model.push(GameSummary { game_name: name, game_id: id })
+                        summaries.push(GameSummary { game_name: name, game_id: id })
                     }
                 },
                 _ => { }
@@ -40,14 +43,16 @@ pub async fn index(state: &State<Sender<Message>>, session: Session) -> Result<T
         Err(_) => {todo!()},
     }
 
+    let model = IndexModel { player_handle: &session.handle_as_ref(), summaries  };
 
-    return Ok(Template::render("index", GameSummaries{games: model}));
+
+    return Ok(Template::render("index", model));
 }
 
 #[post("/game")]
-pub async fn create_game(state: &State<Sender<Message>>) -> Result<Redirect, Error>
+pub async fn create_game(state: &State<Metagame>, session: Session) -> Result<Redirect, Error>
 {
-    let my_sender = state.inner().clone();
+    let my_sender = state.game_runner_pipe.clone();
 
     let (their_sender, my_receiver) = channel();
     let msg = Message { game_id: Uuid::new_v4(), reply_channel: their_sender, msg: Event::New };
@@ -65,7 +70,9 @@ pub async fn create_game(state: &State<Sender<Message>>) -> Result<Redirect, Err
             {
                 Outcome::Created(game_id) =>
                 {   
-                    Ok(Redirect::to(uri!(gm_view(game_id))))
+                    state.new_game(game_id, session.player_id(), String::from("game_name"), Uri::from(format!("/game/{}", game_id)).unwrap_or_else(|| panic!("BOOOOM")));
+                    let lock = state.game_details.write();
+                    Ok(Redirect::to(uri!(game_view(game_id))))
                 }
                 _ =>
                 {
@@ -82,8 +89,8 @@ pub async fn create_game(state: &State<Sender<Message>>) -> Result<Redirect, Err
 
 }
 
-#[get("/admin/<id>")]
-pub async fn gm_view(id: Uuid, state: &State<Sender<Message>>) -> Template
+#[get("/game/<id>")]
+pub async fn game_view(id: Uuid, state: &State<Metagame>) -> Template
 {
 
     return Template::render("gm_view", GMView{game_id: id});
@@ -95,8 +102,17 @@ pub async fn no_session() -> Template
     Template::render("register", context!{})
 }
 
-#[post("/gen_session")]
-pub async fn new_session(proof_of_session: NewSessionOutcome) -> Redirect
+#[derive(FromForm)]
+pub struct UserHandle<'r> {
+    #[field(name = "player_handle")]
+    player_handle: &'r str
+}
+
+#[post("/gen_session", data = "<submission>")]
+pub async fn new_session(_proof_of_session: NewSessionOutcome, session: Session, submission: Form<UserHandle<'_>>) -> Redirect
+// #[post("/gen_session")]
+// pub async fn new_session(proof_of_session: NewSessionOutcome, session: Session) -> Redirect
 {
+    session.set_handle(String::from(submission.player_handle));
     Redirect::to(uri!("/"))
 }

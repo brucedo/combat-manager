@@ -103,11 +103,10 @@ pub async fn game_runner(mut message_queue: Receiver<Message>)
 
 fn enumerate(running_games: &mut HashMap<Uuid, Game> ) -> Outcome
 {
-    let response: Outcome;
 
     let mut enumeration = Vec::<(Uuid, String)>::with_capacity(running_games.capacity());
     
-    for (id, game) in running_games 
+    for (id, _game) in running_games 
     {
         enumeration.push((*id, String::from("")));
     }

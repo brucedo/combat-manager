@@ -1,2 +1,3 @@
 [global]
 template_dir="resources/templates"
+log_level="debug"
