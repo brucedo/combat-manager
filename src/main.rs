@@ -1,12 +1,9 @@
-use std::collections::HashMap;
-use std::sync::Arc;
 
 use log::{debug, error};
 use rocket::fs::{FileServer, relative};
 use rocket::routes;
 use rocket_dyn_templates::Template;
 use tokio::sync::mpsc;
-use uuid::Uuid;
 
 pub mod tracker;
 pub mod http;
@@ -14,8 +11,8 @@ pub mod gamerunner;
 
 use crate::gamerunner::Message;
 use crate::http::server::{new_game, get_example_char, add_new_character, change_game_state, get_state_demo};
-use crate::http::renders::{index, create_game, gm_view};
-use crate::http::session::{SessionMap, Session};
+use crate::http::renders::{index, create_game, gm_view, no_session, new_session};
+use crate::http::session::SessionMap;
 
 #[rocket::main]
 async fn main() {
@@ -42,13 +39,13 @@ async fn main() {
     // tokio::spawn(async move {launch_server(main_sender.clone()).await;});
     tokio::spawn(async move {gamerunner::game_runner(runner_receiver).await;});
 
-    let mut session_map = SessionMap::new();
+    let session_map = SessionMap::new();
 
     let _ = rocket::build()
         .manage(runner_sender)
         .manage(session_map)
         .mount("/res", FileServer::from(relative!("resources/static")))
-        .mount("/", routes![index, create_game, gm_view])
+        .mount("/", routes![index, create_game, gm_view, no_session, new_session])
         .mount("/api", routes![new_game, get_example_char, add_new_character, change_game_state, get_state_demo])
         .attach(Template::fairing())
         .launch()

@@ -4,12 +4,12 @@ use rocket_dyn_templates::{Template, context};
 use uuid::Uuid;
 use tokio::sync::{mpsc::Sender, oneshot::channel};
 
-use crate::gamerunner::{Message, Event, Outcome};
+use crate::{gamerunner::{Message, Event, Outcome}, http::session::NewSessionOutcome};
 
-use super::{serde::{GameSummary, GameSummaries, GMView}, errors::Error};
+use super::{serde::{GameSummary, GameSummaries, GMView}, errors::Error, session::Session};
 
 #[get("/")]
-pub async fn index(state: &State<Sender<Message>>) -> Result<Template, Error>
+pub async fn index(state: &State<Sender<Message>>, session: Session) -> Result<Template, Error>
 {
     let my_sender = state.inner().clone();
     let (their_sender, my_receiver) = channel();
@@ -87,4 +87,16 @@ pub async fn gm_view(id: Uuid, state: &State<Sender<Message>>) -> Template
 {
 
     return Template::render("gm_view", GMView{game_id: id});
+}
+
+#[get("/<_..>")]
+pub async fn no_session() -> Template
+{
+    Template::render("register", context!{})
+}
+
+#[post("/gen_session")]
+pub async fn new_session(proof_of_session: NewSessionOutcome) -> Redirect
+{
+    Redirect::to(uri!("/"))
 }
