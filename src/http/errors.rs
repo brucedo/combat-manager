@@ -10,4 +10,6 @@ pub enum Error
     InternalServerError(Template),
     #[response(status=403)]
     Forbidden(Template),
+    #[response(status=404)]
+    NotFound(Template),
 }

@@ -5,16 +5,16 @@ use tokio::sync::{mpsc::Sender, oneshot::channel};
 use tokio::sync::oneshot::Receiver as OneShotReceiver;
 use uuid::Uuid;
 
-use crate::{gamerunner::{Event, Outcome, Roll, Message}, http::serde::{NewGame, InitiativeRoll},};
+use crate::{gamerunner::{Event, Outcome, Roll, Message}, http::{serde::{NewGame, InitiativeRoll}, metagame::Metagame},};
 
 use super::serde::{Character, AddedCharacterJson, NewState, BeginCombat};
 
 
 #[post("/api/game/new")]
-pub async fn new_game(state: &State<Sender<Message>>) -> Result<Json<NewGame>, (Status, String)>
+pub async fn new_game(state: &State<Metagame<'_>>) -> Result<Json<NewGame>, (Status, String)>
 {
     debug!("Request received to generate new game.");
-    let msg_channel = state.inner().clone();
+    let msg_channel = state.game_runner_pipe.clone();
 
     let (runner_sender, response_channel) = channel::<Outcome>();
     // let msg = RequestMessage::New(NewGame{reply_channel: runner_sender});
@@ -70,13 +70,13 @@ pub fn get_state_demo() -> Json<NewState>
 }
 
 #[post("/api/<id>/character", data = "<character>")]
-pub async fn add_new_character(id: Uuid, character: Json<Character<'_>>, state: &State<Sender<Message>>) -> 
+pub async fn add_new_character(id: Uuid, character: Json<Character<'_>>, state: &State<Metagame<'_>>) -> 
     Result<Json<AddedCharacterJson>, (Status, String)>
 {
     debug!("Received request to add a character to a game.");
 
     let (request, response_channel) = channel::<Outcome>();
-    let msg_channel = state.inner().clone();
+    let msg_channel = state.game_runner_pipe.clone();
     let game_char = copy_character(&character);
 
     // TODO: Fix this up proper like.
@@ -107,11 +107,11 @@ pub async fn add_new_character(id: Uuid, character: Json<Character<'_>>, state: 
 }
 
 #[put("/api/<id>/state", data = "<new_state>")]
-pub async fn change_game_state(id: Uuid, new_state: Json<NewState>, state: &State<Sender<Message>>) -> 
+pub async fn change_game_state(id: Uuid, new_state: Json<NewState>, state: &State<Metagame<'_>>) -> 
     Result<(Status, (ContentType, ())), (Status, String)>
 {
     let (game_sender, game_receiver) = channel::<Outcome>();
-    let msg_channel = state.inner().clone();
+    let msg_channel = state.game_runner_pipe.clone();
     let msg: Message;
 
     msg = match &new_state.to_state
@@ -153,11 +153,11 @@ pub async fn change_game_state(id: Uuid, new_state: Json<NewState>, state: &Stat
 }
 
 #[post("/api/<id>/initiative", data = "<character_init>")]
-pub async fn add_initiative_roll(id: Uuid, character_init: Json<InitiativeRoll>, state: &State<Sender<Message>>) ->
+pub async fn add_initiative_roll(id: Uuid, character_init: Json<InitiativeRoll>, state: &State<Metagame<'_>>) ->
     Result<(Status, (ContentType, ())), (Status, String)>
 {
     let (game_sender, response_channel) = channel::<Outcome>();
-    let msg_channel = state.inner().clone();
+    let msg_channel = state.game_runner_pipe.clone();
     // let msg : RequestMessage = RequestMessage::AddInitiativeRoll
     // (
     //     Roll { reply_channel: game_sender, game_id: id, character_id: character_init.char_id, roll: character_init.roll }

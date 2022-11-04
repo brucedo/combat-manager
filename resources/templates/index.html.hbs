@@ -7,8 +7,8 @@
 <p>Welcome to the SCM, {{player_handle}}.  Please select from one of the ongoing games below.  Or, if you prefer, start your own!</p>
 
 <div>
-{{#each games}}
-    <p>{{game_name}} - {{game_id}}</p>
+{{#each summaries}}
+    <p><a href="{{url}}">{{game_name}}</a></p>
 {{/each}}
 </div>
 
@@ -16,7 +16,7 @@
     <form action="/game" method="post">
         <div>
             <label for="name" id="name_label">Game name:</label>
-            <input type="text" name="name_input" id="name_input" required>
+            <input type="text" name="game_name" id="game_name" required>
         </div>
         <div>
             <input type="submit" value="Create Game">

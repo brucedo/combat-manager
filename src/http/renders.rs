@@ -6,42 +6,50 @@ use rocket_dyn_templates::{Template, context};
 use uuid::Uuid;
 use tokio::sync::{mpsc::Sender, oneshot::channel};
 
-use crate::{gamerunner::{Message, Event, Outcome}, http::session::NewSessionOutcome};
+use crate::{gamerunner::{Message, Event, Outcome}, http::{session::NewSessionOutcome, models::NewGame}};
 
-use super::{models::{GameSummary, GameSummaries, GMView, IndexModel}, errors::Error, session::Session, metagame::Metagame};
+use super::{models::{GameSummary, GMView, IndexModel, PlayerView}, errors::Error, session::Session, metagame::Metagame};
 
 #[get("/")]
-pub async fn index(state: &State<Metagame>, session: Session) -> Result<Template, Error>
+pub async fn index(state: &State<Metagame<'_>>, session: Session) -> Result<Template, Error>
 {
 
-    let my_sender = state.game_runner_pipe.clone();
-    let (their_sender, my_receiver) = channel();
-    let msg = Message {game_id: Uuid::new_v4(), msg: Event::Enumerate, reply_channel: their_sender};
+    // let my_sender = state.game_runner_pipe.clone();
+    // let (their_sender, my_receiver) = channel();
+    // let msg = Message {game_id: Uuid::new_v4(), msg: Event::Enumerate, reply_channel: their_sender};
 
-    if let Err(err) = my_sender.send(msg).await
-    {
-        return Err(Error::InternalServerError(Template::render("error_pages/500", context! {action_name: "create a new game", error: err.to_string()})));
-    }
+    // if let Err(err) = my_sender.send(msg).await
+    // {
+    //     return Err(Error::InternalServerError(Template::render("error_pages/500", context! {action_name: "create a new game", error: err.to_string()})));
+    // }
 
+    let lock = state.game_details.read();
     let mut summaries = Vec::<GameSummary>::new();
-    match my_receiver.await
+
+    for (_id, details) in lock.iter()
     {
-        Ok(enum_outcome) => 
-        {
-            match enum_outcome
-            {
-                crate::gamerunner::Outcome::Summaries(summary) => 
-                {
-                    for (id, name) in summary
-                    {
-                        summaries.push(GameSummary { game_name: name, game_id: id })
-                    }
-                },
-                _ => { }
-            }
-        },
-        Err(_) => {todo!()},
+        summaries.push(GameSummary{ game_name: details.game_name.clone(), url: details.game_url.to_string(), gm: details.gm_id })
     }
+
+    // let mut summaries = Vec::<GameSummary>::new();
+    // match my_receiver.await
+    // {
+    //     Ok(enum_outcome) => 
+    //     {
+    //         match enum_outcome
+    //         {
+    //             crate::gamerunner::Outcome::Summaries(summary) => 
+    //             {
+    //                 for (id, name) in summary
+    //                 {
+    //                     summaries.push(GameSummary { game_name: name, url: id })
+    //                 }
+    //             },
+    //             _ => { }
+    //         }
+    //     },
+    //     Err(_) => {todo!()},
+    // }
 
     let model = IndexModel { player_handle: &session.handle_as_ref(), summaries  };
 
@@ -49,8 +57,8 @@ pub async fn index(state: &State<Metagame>, session: Session) -> Result<Template
     return Ok(Template::render("index", model));
 }
 
-#[post("/game")]
-pub async fn create_game(state: &State<Metagame>, session: Session) -> Result<Redirect, Error>
+#[post("/game", data = "<new_game>")]
+pub async fn create_game(state: &State<Metagame<'_>>, session: Session, new_game: Form<NewGame<'_>>) -> Result<Redirect, Error>
 {
     let my_sender = state.game_runner_pipe.clone();
 
@@ -70,9 +78,9 @@ pub async fn create_game(state: &State<Metagame>, session: Session) -> Result<Re
             {
                 Outcome::Created(game_id) =>
                 {   
-                    state.new_game(game_id, session.player_id(), String::from("game_name"), Uri::from(format!("/game/{}", game_id)).unwrap_or_else(|| panic!("BOOOOM")));
-                    let lock = state.game_details.write();
-                    Ok(Redirect::to(uri!(game_view(game_id))))
+                    
+                    state.new_game(game_id, session.player_id(), String::from(new_game.game_name), uri!(game_view(game_id)));
+                    return Ok(Redirect::to(uri!(game_view(game_id))));
                 }
                 _ =>
                 {
@@ -90,10 +98,23 @@ pub async fn create_game(state: &State<Metagame>, session: Session) -> Result<Re
 }
 
 #[get("/game/<id>")]
-pub async fn game_view(id: Uuid, state: &State<Metagame>) -> Template
+pub async fn game_view(id: Uuid, session: Session, state: &State<Metagame<'_>>) -> Result<Template, Error>
 {
+    let game_name = state.game_name(id);
 
-    return Template::render("gm_view", GMView{game_id: id});
+    if game_name.is_none()
+    {
+        return Err(Error::NotFound(Template::render("error_pages/404", context!{})));
+    }
+
+    if state.validate_ownership( session.player_id(), id)
+    {
+        return Ok(Template::render("gm_view", GMView{game_id: id}));
+    }
+    else 
+    {
+        return Ok(Template::render("player", PlayerView{game_id: id, game_name: game_name.unwrap()}));
+    }
 }
 
 #[get("/<_..>")]
