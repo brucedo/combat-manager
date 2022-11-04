@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use parking_lot::RwLock;
-use rocket::http::{hyper::Uri, uri::Origin};
+use rocket::http::uri::Origin;
 use tokio::sync::mpsc::Sender;
 use uuid::Uuid;
 

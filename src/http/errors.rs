@@ -1,5 +1,5 @@
 
-use rocket::{response::Responder, http::Status};
+use rocket::{response::Responder};
 use rocket_dyn_templates::Template;
 
 

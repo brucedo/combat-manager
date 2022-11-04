@@ -1,10 +1,10 @@
 use std::str::FromStr;
 
 use log::debug;
-use rocket::{get, post, State, response::Redirect, uri, form::{FromForm, Form}, http::hyper::Uri};
+use rocket::{get, post, State, response::Redirect, uri, form::{FromForm, Form}};
 use rocket_dyn_templates::{Template, context};
 use uuid::Uuid;
-use tokio::sync::{mpsc::Sender, oneshot::channel};
+use tokio::sync::{oneshot::channel};
 
 use crate::{gamerunner::{Message, Event, Outcome}, http::{session::NewSessionOutcome, models::NewGame}};
 
@@ -14,15 +14,6 @@ use super::{models::{GameSummary, GMView, IndexModel, PlayerView}, errors::Error
 pub async fn index(state: &State<Metagame<'_>>, session: Session) -> Result<Template, Error>
 {
 
-    // let my_sender = state.game_runner_pipe.clone();
-    // let (their_sender, my_receiver) = channel();
-    // let msg = Message {game_id: Uuid::new_v4(), msg: Event::Enumerate, reply_channel: their_sender};
-
-    // if let Err(err) = my_sender.send(msg).await
-    // {
-    //     return Err(Error::InternalServerError(Template::render("error_pages/500", context! {action_name: "create a new game", error: err.to_string()})));
-    // }
-
     let lock = state.game_details.read();
     let mut summaries = Vec::<GameSummary>::new();
 
@@ -31,25 +22,6 @@ pub async fn index(state: &State<Metagame<'_>>, session: Session) -> Result<Temp
         summaries.push(GameSummary{ game_name: details.game_name.clone(), url: details.game_url.to_string(), gm: details.gm_id })
     }
 
-    // let mut summaries = Vec::<GameSummary>::new();
-    // match my_receiver.await
-    // {
-    //     Ok(enum_outcome) => 
-    //     {
-    //         match enum_outcome
-    //         {
-    //             crate::gamerunner::Outcome::Summaries(summary) => 
-    //             {
-    //                 for (id, name) in summary
-    //                 {
-    //                     summaries.push(GameSummary { game_name: name, url: id })
-    //                 }
-    //             },
-    //             _ => { }
-    //         }
-    //     },
-    //     Err(_) => {todo!()},
-    // }
 
     let model = IndexModel { player_handle: &session.handle_as_ref(), summaries  };
 
@@ -113,7 +85,7 @@ pub async fn game_view(id: Uuid, session: Session, state: &State<Metagame<'_>>) 
     }
     else 
     {
-        return Ok(Template::render("player", PlayerView{game_id: id, game_name: game_name.unwrap()}));
+        return Ok(Template::render("player_view", PlayerView{game_id: id, game_name: game_name.unwrap()}));
     }
 }
 
@@ -131,8 +103,6 @@ pub struct UserHandle<'r> {
 
 #[post("/gen_session", data = "<submission>")]
 pub async fn new_session(_proof_of_session: NewSessionOutcome, session: Session, submission: Form<UserHandle<'_>>) -> Redirect
-// #[post("/gen_session")]
-// pub async fn new_session(proof_of_session: NewSessionOutcome, session: Session) -> Redirect
 {
     session.set_handle(String::from(submission.player_handle));
     Redirect::to(uri!("/"))

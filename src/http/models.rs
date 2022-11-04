@@ -19,13 +19,6 @@ pub struct GameSummary
     pub gm: Uuid
 }
 
-// #[derive(Serialize, Deserialize)]
-// #[serde(crate = "rocket::serde")]
-// pub struct GameSummaries
-// {
-//     pub games: Vec<GameSummary>,
-// }
-
 #[derive(Serialize, Deserialize)]
 #[serde(crate = "rocket::serde")]
 pub struct GMView
