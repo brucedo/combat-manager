@@ -1,0 +1,27 @@
+.game-display-container {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    justify-content: stretch;
+}
+
+.game-left-box {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    order: 0;
+    flex-grow: 4;
+}
+
+.game-right-box {
+    order: 1;
+}
+
+.game-notify-box {
+    order: 0;
+}
+
+.game-action-box {
+    order: 1;
+    flex-grow: 9;
+}
