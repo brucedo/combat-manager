@@ -23,24 +23,32 @@ pub struct GameSummary
 
 #[derive(Serialize)]
 #[serde(crate = "rocket::serde")]
-pub struct GMView<'a>
+pub struct GMView
 {
     pub game_id: Uuid,
-    pub pcs: Vec<SimpleCharacterView<'a>>,
+    pub pcs: Vec<SimpleCharacterView>,
+    pub npcs: Vec<SimpleCharacterView>,
 }
 
 #[derive(Serialize)]
 #[serde(crate = "rocket::serde")]
-pub struct SimpleCharacterView<'r>
+pub struct SimpleCharacterView
 {
-    pub char_name: &'r str,
-    pub char_id: &'r Uuid,
+    pub char_name: String,
+    pub char_id: Uuid,
 }
 
-impl From<Character> for SimpleCharacterView<'_>
+impl From<Character> for SimpleCharacterView
 {
-    fn from(_: Character) -> Self {
-        todo!()
+    fn from(src: Character) -> Self {
+        SimpleCharacterView { char_name: src.name.clone(), char_id: src.id.clone() }
+    }
+}
+
+impl From<&Character> for SimpleCharacterView
+{
+    fn from(src: &Character) -> Self {
+        SimpleCharacterView { char_name: src.name.clone(), char_id: src.id.clone() }
     }
 }
 

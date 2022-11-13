@@ -1,14 +1,13 @@
-use std::str::FromStr;
 
 use log::debug;
-use rocket::{get, post, State, response::Redirect, uri, form::{FromForm, Form}, outcome};
+use rocket::{get, post, State, response::Redirect, uri, form::{FromForm, Form}};
 use rocket_dyn_templates::{Template, context};
 use uuid::Uuid;
 use tokio::sync::{oneshot::channel};
 
-use crate::{gamerunner::{Message, Event, Outcome}, http::{session::NewSessionOutcome, models::NewGame}, tracker::character::Character};
+use crate::{gamerunner::{Message, Event, Outcome}, http::{session::NewSessionOutcome, models::NewGame}};
 
-use super::{models::{GameSummary, GMView, IndexModel, PlayerView}, errors::Error, session::Session, metagame::Metagame};
+use super::{models::{GameSummary, GMView, IndexModel, PlayerView, SimpleCharacterView}, errors::Error, session::Session, metagame::Metagame};
 
 #[get("/")]
 pub async fn index(state: &State<Metagame<'_>>, session: Session) -> Result<Template, Error>
@@ -73,8 +72,8 @@ pub async fn create_game(state: &State<Metagame<'_>>, session: Session, new_game
 pub async fn game_view(id: Uuid, session: Session, state: &State<Metagame<'_>>) -> Result<Template, Error>
 {
     let game_name = state.game_name(id);
-    let pcs: Vec<(Uuid, Character)>;
-    let npcs: Vec<(Uuid, Character)>;
+    let mut pcs: Vec<SimpleCharacterView>;
+    let mut npcs: Vec<SimpleCharacterView>;
 
     if game_name.is_none()
     {
@@ -94,7 +93,15 @@ pub async fn game_view(id: Uuid, session: Session, state: &State<Metagame<'_>>) 
         {
             match outcome
             {
-                Outcome::CastList(cast) => {todo!();}
+                Outcome::CastList(cast) => 
+                {
+                    pcs = Vec::with_capacity(cast.len());
+                    debug!("Converting Character to SimpleCharacterView for {} records", cast.len());
+                    for member in cast
+                    {
+                        pcs.push(SimpleCharacterView::from(member.as_ref()));
+                    }
+                }
                 _ => 
                 {
                     let err = "Boy howdy, something really went south here.  We received a completely unexpected message type from the GameRunner for creating a game.";
@@ -120,7 +127,14 @@ pub async fn game_view(id: Uuid, session: Session, state: &State<Metagame<'_>>) 
         {
             match outcome
             {
-                Outcome::CastList(cast) => {todo!();}
+                Outcome::CastList(cast) => 
+                {
+                    npcs = Vec::with_capacity(cast.len());
+                    for member in cast
+                    {
+                        npcs.push(SimpleCharacterView::from(member.as_ref()));
+                    }
+                }
                 _ => 
                 {
                     let err = "Boy howdy, something really went south here.  We received a completely unexpected message type from the GameRunner for creating a game.";
@@ -136,7 +150,7 @@ pub async fn game_view(id: Uuid, session: Session, state: &State<Metagame<'_>>) 
 
     if state.validate_ownership( session.player_id(), id)
     {
-        return Ok(Template::render("gm_view", GMView{game_id:id, pcs: Vec::new() }));
+        return Ok(Template::render("gm_view", GMView{game_id:id, pcs, npcs }));
     }
     else 
     {
@@ -144,7 +158,7 @@ pub async fn game_view(id: Uuid, session: Session, state: &State<Metagame<'_>>) 
     }
 }
 
-#[get("/<_..>")]
+#[get("/<_..>", rank = 11)]
 pub async fn no_session() -> Template
 {
     Template::render("register", context!{})

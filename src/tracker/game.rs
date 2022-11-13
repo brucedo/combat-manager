@@ -349,36 +349,35 @@ impl Game {
     //     return result;
     // }
 
-    pub fn get_cast(self: &Game) -> Vec<(Uuid, Arc<Character>)>
+    pub fn get_cast(self: &Game) -> Vec<Arc<Character>>
     {
         let mut result = Vec::new();
         for (id, sheet) in &self.cast
         {
-            Arc::new(sheet);
-            result.push((id.clone(), (sheet.clone())));
+            result.push(sheet.clone());
         }
 
         return result;
     }
 
-    pub fn get_npcs(self: &Game) -> Vec<(Uuid, Arc<Character>)>
+    pub fn get_npcs(self: &Game) -> Vec<Arc<Character>>
     {
         self.filter_cast_by(false)
     }
 
-    pub fn get_pcs(self: &Game) -> Vec<(Uuid, Arc<Character>)>
+    pub fn get_pcs(self: &Game) -> Vec<Arc<Character>>
     {
         self.filter_cast_by(true)
     }
 
-    fn filter_cast_by(self: &Game, player_owned: bool) -> Vec<(Uuid, Arc<Character>)>
+    fn filter_cast_by(self: &Game, player_owned: bool) -> Vec<Arc<Character>>
     {
         let mut result = Vec::new();
         for (id, sheet) in &self.cast
         {
             if sheet.player_character == player_owned
             {
-                result.push((id.clone(), sheet.clone()));
+                result.push(sheet.clone());
             }
         }
 
@@ -1023,9 +1022,9 @@ mod tests
         let ids = vec![mork_id, dorf_id, melf_id];
 
         assert!(cast.len() == 3);
-        assert!(ids.contains(&cast.get(0).unwrap().0));
-        assert!(ids.contains(&cast.get(1).unwrap().0));
-        assert!(ids.contains(&cast.get(2).unwrap().0));
+        assert!(ids.contains(&cast.get(0).unwrap().id));
+        assert!(ids.contains(&cast.get(1).unwrap().id));
+        assert!(ids.contains(&cast.get(2).unwrap().id));
         
     }
 
@@ -1058,7 +1057,7 @@ mod tests
         let cast = game.get_npcs();
 
         assert!(cast.len() == 1);
-        assert!(cast.get(0).unwrap().0 == dorf_id);
+        assert!(cast.get(0).unwrap().id == dorf_id);
     }
 
     #[test]
@@ -1104,8 +1103,8 @@ mod tests
         let ids = vec![mork_id, melf_id];
 
         assert!(ids.len() == 2);
-        assert!(ids.contains(&cast.get(0).unwrap().0));
-        assert!(ids.contains(&cast.get(1).unwrap().0));
+        assert!(ids.contains(&cast.get(0).unwrap().id));
+        assert!(ids.contains(&cast.get(1).unwrap().id));
     }
 
     #[test]

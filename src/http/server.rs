@@ -43,7 +43,7 @@ pub async fn new_game(state: &State<Metagame<'_>>) -> Result<Json<NewGame>, (Sta
     
 }
 
-#[get("/api/demo")]
+#[get("/demo")]
 pub fn get_example_char <'r> () -> Json<Character<'r>>
 {
     let example = Character {
@@ -55,7 +55,7 @@ pub fn get_example_char <'r> () -> Json<Character<'r>>
     return Json(example);
 }
 
-#[get("/api/state_demo")]
+#[get("/state_demo")]
 pub fn get_state_demo() -> Json<NewState>
 {
     let mut ids = Vec::<Uuid>::new();
@@ -69,7 +69,7 @@ pub fn get_state_demo() -> Json<NewState>
     Json(change)
 }
 
-#[post("/api/<id>/character", data = "<character>")]
+#[post("/<id>/character", data = "<character>")]
 pub async fn add_new_character(id: Uuid, character: Json<Character<'_>>, state: &State<Metagame<'_>>) -> 
     Result<Json<AddedCharacterJson>, (Status, String)>
 {
@@ -106,7 +106,7 @@ pub async fn add_new_character(id: Uuid, character: Json<Character<'_>>, state: 
     }
 }
 
-#[put("/api/<id>/state", data = "<new_state>")]
+#[put("/<id>/state", data = "<new_state>")]
 pub async fn change_game_state(id: Uuid, new_state: Json<NewState>, state: &State<Metagame<'_>>) -> 
     Result<(Status, (ContentType, ())), (Status, String)>
 {
@@ -152,7 +152,7 @@ pub async fn change_game_state(id: Uuid, new_state: Json<NewState>, state: &Stat
 
 }
 
-#[post("/api/<id>/initiative", data = "<character_init>")]
+#[post("/<id>/initiative", data = "<character_init>")]
 pub async fn add_initiative_roll(id: Uuid, character_init: Json<InitiativeRoll>, state: &State<Metagame<'_>>) ->
     Result<(Status, (ContentType, ())), (Status, String)>
 {

@@ -47,8 +47,8 @@ async fn main() {
         .manage(game_state)
         .manage(session_map)
         .mount("/res", FileServer::from(relative!("resources/static")))
-        .mount("/", routes![index, create_game, game_view, no_session, new_session])
         .mount("/api", routes![new_game, get_example_char, add_new_character, change_game_state, get_state_demo])
+        .mount("/", routes![index, create_game, game_view, no_session, new_session])
         .attach(Template::fairing())
         .launch()
         .await;

@@ -474,7 +474,7 @@ pub enum Outcome
 {
     Summaries(Vec<(Uuid, String)>),
     Created(Uuid),
-    CastList(Vec<(Uuid, Arc<Character>)>),
+    CastList(Vec<Arc<Character>>),
     Destroyed,
     Error(Error),
     CharacterAdded(Uuid),
