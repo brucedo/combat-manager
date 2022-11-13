@@ -5,4 +5,22 @@
 </head>
 <body>
     <h1>Game {{game_id}}: Game Management</h1>
+    <div class="game-display-container">
+        <div class="game-left-box">
+            <div class="game-notify-box"></div>
+            <div class="game-action-box"></div>
+        </div>
+        <div class="game-right-box">
+            PCs:
+            <ul>
+                {{#each pcs}}
+                <li><input type="checkbox" name="{{char_name}}" id="{{char_id}}"><label for="{{char_id}}">{{char_name}}</label></li>
+                {{/each}}
+            </ul>
+            NPCs:
+            <ul>{{#each npcs}}
+                <li><input type="checkbox" name="{{char_name}}" id="{{char_id}}"><label for="{{char_id}}">{{char_name}}</label></li>
+            </ul>
+        </div>
+    </div>
 </body>

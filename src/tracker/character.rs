@@ -1,11 +1,13 @@
 use std::collections::{HashMap, HashSet};
 
+use uuid::Uuid;
+
 use super::gear::{Weapon, Armour};
 
 pub struct Character
 {
     pub name: String,
-    // pub id: Uuid,
+    pub id: Uuid,
     pub player_character: bool,
     pub metatype: Metatypes,
     pub stats: HashMap<String, i8>,
@@ -26,7 +28,7 @@ impl Character
     {
         Character {
             name,
-            // id: Uuid::new_v4(),
+            id: Uuid::new_v4(),
             player_character: true,
             metatype,
             stats: HashMap::new(),
@@ -46,7 +48,7 @@ impl Character
     {
         Character {
             name,
-            // id: Uuid::new_v4(),
+            id: Uuid::new_v4(),
             player_character: false,
             metatype,
             stats: HashMap::new(),

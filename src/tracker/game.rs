@@ -1,4 +1,4 @@
-use std::collections::{HashMap, hash_map::Entry};
+use std::{collections::{HashMap, hash_map::Entry}, sync::Arc};
 
 use log::debug;
 use uuid::Uuid;
@@ -30,7 +30,7 @@ use super::{character::Character, initiative::{InitTracker, PassState}};
 pub struct Game {
     current_state: State,
 
-    cast: HashMap<Uuid, Character>,
+    cast: HashMap<Uuid, Arc<Character>>,
 
     // Combat data
     
@@ -67,11 +67,11 @@ impl Game {
     // **********************************************************************************
     // Game specific setup and upkeep
 
-    pub fn add_cast_member(self: &mut Game, cast_member: Character) -> Uuid
+    pub fn add_cast_member(self: &mut Game, mut cast_member: Character) -> Uuid
     {
         let id = Uuid::new_v4();
-        // cast_member.id = id;
-        self.cast.insert(id, cast_member);
+        cast_member.id = id;
+        self.cast.insert(id, Arc::new(cast_member));
 
         return id;
     }
@@ -336,6 +336,56 @@ impl Game {
 
         return undeclared;
     }
+
+    // pub fn get_from_characters<'a, T>(self: &'a Game) -> Vec<T>
+    // where T: From<&'a Character>
+    // {
+    //     let mut result = Vec::new();
+    //     for (id, sheet) in &self.cast
+    //     {
+    //         result.push(sheet.into());
+    //     }
+
+    //     return result;
+    // }
+
+    pub fn get_cast(self: &Game) -> Vec<(Uuid, Arc<Character>)>
+    {
+        let mut result = Vec::new();
+        for (id, sheet) in &self.cast
+        {
+            Arc::new(sheet);
+            result.push((id.clone(), (sheet.clone())));
+        }
+
+        return result;
+    }
+
+    pub fn get_npcs(self: &Game) -> Vec<(Uuid, Arc<Character>)>
+    {
+        self.filter_cast_by(false)
+    }
+
+    pub fn get_pcs(self: &Game) -> Vec<(Uuid, Arc<Character>)>
+    {
+        self.filter_cast_by(true)
+    }
+
+    fn filter_cast_by(self: &Game, player_owned: bool) -> Vec<(Uuid, Arc<Character>)>
+    {
+        let mut result = Vec::new();
+        for (id, sheet) in &self.cast
+        {
+            if sheet.player_character == player_owned
+            {
+                result.push((id.clone(), sheet.clone()));
+            }
+        }
+
+        return result;
+    }
+
+
 
     // ******************************************************************************************
     // State change methods
@@ -950,6 +1000,134 @@ mod tests
         let pre_remove_size = game.cast_size();
         game.retire_cast_member(id);
         assert_eq!(game.cast_size(), pre_remove_size - 1); 
+    }
+
+    #[test]
+    pub fn all_cast_members_uuids_can_be_retrieved_at_any_time()
+    {
+        let mut mork = build_orc();
+        let mut dorf = build_dwarf();
+        let mut melf = build_elf();
+
+        mork.player_character = true;
+        dorf.player_character = false;
+        melf.player_character = true;
+
+        let mut game = Game::new();
+
+        let mork_id = game.add_cast_member(mork);
+        let dorf_id = game.add_cast_member(dorf);
+        let melf_id = game.add_cast_member(melf);
+
+        let cast = game.get_cast();
+        let ids = vec![mork_id, dorf_id, melf_id];
+
+        assert!(cast.len() == 3);
+        assert!(ids.contains(&cast.get(0).unwrap().0));
+        assert!(ids.contains(&cast.get(1).unwrap().0));
+        assert!(ids.contains(&cast.get(2).unwrap().0));
+        
+    }
+
+    #[test]
+    pub fn get_cast_generates_empty_vec_if_no_characters_added()
+    {
+        let game = Game::new();
+
+        let ids = game.get_cast();
+        assert!(ids.is_empty());
+    }
+
+    #[test]
+    pub fn get_npcs_returns_partial_set_of_characters()
+    {
+        let mut mork = build_orc();
+        let mut dorf = build_dwarf();
+        let mut melf = build_elf();
+
+        mork.player_character = true;
+        dorf.player_character = false;
+        melf.player_character = true;
+
+        let mut game = Game::new();
+
+        let _mork_id = game.add_cast_member(mork);
+        let dorf_id = game.add_cast_member(dorf);
+        let _melf_id = game.add_cast_member(melf);
+
+        let cast = game.get_npcs();
+
+        assert!(cast.len() == 1);
+        assert!(cast.get(0).unwrap().0 == dorf_id);
+    }
+
+    #[test]
+    pub fn if_no_cast_members_are_npcs_get_npcs_returns_empty_vec()
+    {
+        let mut mork = build_orc();
+        let mut dorf = build_dwarf();
+        let mut melf = build_elf();
+
+        mork.player_character = true;
+        dorf.player_character = true;
+        melf.player_character = true;
+
+        let mut game = Game::new();
+
+        let _mork_id = game.add_cast_member(mork);
+        let _dorf_id = game.add_cast_member(dorf);
+        let _melf_id = game.add_cast_member(melf);
+
+        let ids = game.get_npcs();
+
+        assert!(ids.is_empty());
+    }
+
+    #[test]
+    pub fn get_pcs_returns_partial_set_of_characters()
+    {
+        let mut mork = build_orc();
+        let mut dorf = build_dwarf();
+        let mut melf = build_elf();
+
+        mork.player_character = true;
+        dorf.player_character = false;
+        melf.player_character = true;
+
+        let mut game = Game::new();
+
+        let mork_id = game.add_cast_member(mork);
+        let dorf_id = game.add_cast_member(dorf);
+        let melf_id = game.add_cast_member(melf);
+
+        let cast = game.get_pcs();
+        let ids = vec![mork_id, melf_id];
+
+        assert!(ids.len() == 2);
+        assert!(ids.contains(&cast.get(0).unwrap().0));
+        assert!(ids.contains(&cast.get(1).unwrap().0));
+    }
+
+    #[test]
+    pub fn if_no_cast_members_are_pcs_get_npcs_returns_empty_vec()
+    {
+        let mut mork = build_orc();
+        let mut dorf = build_dwarf();
+        let mut melf = build_elf();
+
+        mork.player_character = false;
+        dorf.player_character = false;
+        melf.player_character = false;
+
+        let mut game = Game::new();
+
+        let _mork_id = game.add_cast_member(mork);
+        let _dorf_id = game.add_cast_member(dorf);
+        let _melf_id = game.add_cast_member(melf);
+
+        let ids = game.get_pcs();
+
+        assert!(ids.is_empty());
     }
 
     #[test]

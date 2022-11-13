@@ -1,12 +1,12 @@
 use std::str::FromStr;
 
 use log::debug;
-use rocket::{get, post, State, response::Redirect, uri, form::{FromForm, Form}};
+use rocket::{get, post, State, response::Redirect, uri, form::{FromForm, Form}, outcome};
 use rocket_dyn_templates::{Template, context};
 use uuid::Uuid;
 use tokio::sync::{oneshot::channel};
 
-use crate::{gamerunner::{Message, Event, Outcome}, http::{session::NewSessionOutcome, models::NewGame}};
+use crate::{gamerunner::{Message, Event, Outcome}, http::{session::NewSessionOutcome, models::NewGame}, tracker::character::Character};
 
 use super::{models::{GameSummary, GMView, IndexModel, PlayerView}, errors::Error, session::Session, metagame::Metagame};
 
@@ -73,15 +73,70 @@ pub async fn create_game(state: &State<Metagame<'_>>, session: Session, new_game
 pub async fn game_view(id: Uuid, session: Session, state: &State<Metagame<'_>>) -> Result<Template, Error>
 {
     let game_name = state.game_name(id);
+    let pcs: Vec<(Uuid, Character)>;
+    let npcs: Vec<(Uuid, Character)>;
 
     if game_name.is_none()
     {
         return Err(Error::NotFound(Template::render("error_pages/404", context!{})));
     }
 
+    let (their_sender, my_receiver) = channel::<Outcome>();
+    let my_sender = state.game_runner_pipe.clone();
+    if let Err(_) = my_sender.send(Message{ game_id: id, reply_channel: their_sender, msg: Event::GetPcCast }).await
+    {
+        return Err(Error::InternalServerError(Template::render("error_pages/500", context!{action_name: "get list of PCs", error: "The game runner closed its channel."})));
+    }
+
+    match my_receiver.await
+    {
+        Ok(outcome) => 
+        {
+            match outcome
+            {
+                Outcome::CastList(cast) => {todo!();}
+                _ => 
+                {
+                    let err = "Boy howdy, something really went south here.  We received a completely unexpected message type from the GameRunner for creating a game.";
+                    return Err(Error::InternalServerError(Template::render("error_pages/500", context! {action_name: "create a new game", error: err})));
+                }
+            }
+        },
+        Err(_) => 
+        {
+            return Err(Error::InternalServerError(Template::render("error_pages/500", context!{action_name: "get list of PCs", error: "The one-shot channel closed."})));            
+        }
+    }
+
+    let (their_sender, my_receiver) = channel::<Outcome>();
+    if let Err(_) = my_sender.send(Message{ game_id: id, reply_channel: their_sender, msg: Event::GetNpcCast }).await
+    {
+        return Err(Error::InternalServerError(Template::render("error_pages/500", context!{action_name: "get list of PCs", error: "The game runner closed its channel."})));
+    }
+
+    match my_receiver.await
+    {
+        Ok(outcome) => 
+        {
+            match outcome
+            {
+                Outcome::CastList(cast) => {todo!();}
+                _ => 
+                {
+                    let err = "Boy howdy, something really went south here.  We received a completely unexpected message type from the GameRunner for creating a game.";
+                    return Err(Error::InternalServerError(Template::render("error_pages/500", context! {action_name: "create a new game", error: err})));
+                }
+            }
+        },
+        Err(_) => 
+        {
+            return Err(Error::InternalServerError(Template::render("error_pages/500", context!{action_name: "get list of PCs", error: "The one-shot channel closed."})));            
+        }
+    }
+
     if state.validate_ownership( session.player_id(), id)
     {
-        return Ok(Template::render("gm_view", GMView{game_id: id}));
+        return Ok(Template::render("gm_view", GMView{game_id:id, pcs: Vec::new() }));
     }
     else 
     {

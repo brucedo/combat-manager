@@ -1,4 +1,4 @@
-use std::{collections::HashMap};
+use std::{collections::HashMap, sync::Arc};
 
 use log::{debug, error};
 use tokio::sync::mpsc::Receiver;
@@ -38,6 +38,18 @@ pub async fn game_runner(mut message_queue: Receiver<Message>)
                 debug!("Request is to add a new character.");
                 response = find_game_and_act(&mut running_games, game_id, | game | {add_character(character, game)});
             },
+            Event::GetFullCast => {
+                debug!("Request is to get the full cast list.");
+                response = find_game_and_act(&mut running_games, game_id, get_full_cast);
+            },
+            Event::GetNpcCast => {
+                debug!("Request is to get the NPC cast list.");
+                response = find_game_and_act(&mut running_games, game_id, get_npcs);
+            },
+            Event::GetPcCast => {
+                debug!("Reqeust is to get the PC cast list.");
+                response = find_game_and_act(&mut running_games, game_id, get_pcs);
+            }
             Event::StartCombat(combatants) => {
                 debug!("Request is to start the combat phase.");                
                 response = find_game_and_act(&mut running_games, game_id, | game | {start_combat(combatants, game)})
@@ -145,6 +157,21 @@ fn add_character(character: Character, game: &mut Game) -> Outcome
 {
     let char_id = game.add_cast_member(character);
     return Outcome::CharacterAdded(char_id);
+}
+
+fn get_full_cast(game: &mut Game) -> Outcome
+{
+    Outcome::CastList(game.get_cast())
+}
+
+fn get_npcs(game: &mut Game) -> Outcome
+{
+    Outcome::CastList(game.get_npcs())
+}
+
+fn get_pcs(game: &mut Game) -> Outcome
+{
+    Outcome::CastList(game.get_pcs())
 }
 
 fn start_combat(combatants: Vec<Uuid>, game: &mut Game) -> Outcome
@@ -418,6 +445,9 @@ pub enum Event
     New,
     Delete,
     AddCharacter(Character),
+    GetFullCast,
+    GetNpcCast,
+    GetPcCast,
     StartCombat(Vec<Uuid>),
     AddInitiativeRoll(Roll),
     BeginInitiativePhase,
@@ -444,6 +474,7 @@ pub enum Outcome
 {
     Summaries(Vec<(Uuid, String)>),
     Created(Uuid),
+    CastList(Vec<(Uuid, Arc<Character>)>),
     Destroyed,
     Error(Error),
     CharacterAdded(Uuid),

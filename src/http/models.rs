@@ -2,6 +2,8 @@ use rocket::serde::{Serialize, Deserialize};
 use rocket::form::FromForm;
 use uuid::Uuid;
 
+use crate::tracker::character::Character;
+
 #[derive(Serialize, Deserialize)]
 #[serde(crate = "rocket::serde")]
 pub struct IndexModel<'r>
@@ -19,11 +21,27 @@ pub struct GameSummary
     pub gm: Uuid
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
 #[serde(crate = "rocket::serde")]
-pub struct GMView
+pub struct GMView<'a>
 {
     pub game_id: Uuid,
+    pub pcs: Vec<SimpleCharacterView<'a>>,
+}
+
+#[derive(Serialize)]
+#[serde(crate = "rocket::serde")]
+pub struct SimpleCharacterView<'r>
+{
+    pub char_name: &'r str,
+    pub char_id: &'r Uuid,
+}
+
+impl From<Character> for SimpleCharacterView<'_>
+{
+    fn from(_: Character) -> Self {
+        todo!()
+    }
 }
 
 #[derive(Serialize, Deserialize)]
