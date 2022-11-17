@@ -5,9 +5,9 @@ use rocket_dyn_templates::{Template, context};
 use uuid::Uuid;
 use tokio::sync::{oneshot::channel};
 
-use crate::{gamerunner::{Message, Event, Outcome}, http::{session::NewSessionOutcome, models::NewGame}};
+use crate::{gamerunner::{Message, Event, Outcome}, http::{session::NewSessionOutcome, models::NewGame}, tracker::character::Character};
 
-use super::{models::{GameSummary, GMView, IndexModel, PlayerView, SimpleCharacterView}, errors::Error, session::Session, metagame::Metagame};
+use super::{models::{GameSummary, GMView, IndexModel, PlayerView, SimpleCharacterView, NewNpc}, errors::Error, session::Session, metagame::Metagame};
 
 #[get("/")]
 pub async fn index(state: &State<Metagame<'_>>, session: Session) -> Result<Template, Error>
@@ -156,6 +156,18 @@ pub async fn game_view(id: Uuid, session: Session, state: &State<Metagame<'_>>) 
     {
         return Ok(Template::render("player_view", PlayerView{game_id: id, game_name: game_name.unwrap()}));
     }
+}
+
+#[post("/game/<id>/add_npc", data="<npc>")]
+pub async fn add_npc(id: Uuid, session: Session, state: &State<Metagame<'_>>, npc: Form<NewNpc<'_>>)
+{
+
+    if !state.validate_ownership(session.player_id(), id)
+    {
+        
+    }
+
+    let character = Character::from(npc.into_inner());
 }
 
 #[get("/<_..>", rank = 11)]

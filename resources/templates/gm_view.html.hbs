@@ -9,8 +9,22 @@
         <div class="game-left-box">
             <div class="game-notify-box"></div>
             <div class="game-action-box">
-                <input type="button" id="add_npc" name="add_npc"><label for="add_npc">Add NPC</label>
-                <input type="button" id="start_combat" name="start_combat"><label for="start_combat">Start Fightin'</label>
+                <div>
+                    <form action="/game/{{game_id}}/add_npc">
+                        <label for="npc_name">NPC Name: </label><input type="text" id="npc_name" name="name" required>
+                        <select id="npc_metatype" name="metatype">
+                            <option value="Human">Human</option>
+                            <option value="Troll">Troll</option>
+                            <option value="Dwarf">Dwarf</option>
+                            <option value="Orc">Orc</option>
+                            <option value="Elf">Elf</option>
+                        </select>
+                        <input type="submit" id="add_npc" name="add_npc" value="Add NPC">
+                    </form>
+                </div>
+                <div>
+                <input type="button" id="start_combat" name="start_combat" value="Start Fightin'">
+                </div>
             </div>
         </div>
         <div class="game-right-box">

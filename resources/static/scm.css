@@ -22,6 +22,9 @@
 }
 
 .game-action-box {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
     order: 1;
     flex-grow: 9;
 }

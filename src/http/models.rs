@@ -2,7 +2,7 @@ use rocket::serde::{Serialize, Deserialize};
 use rocket::form::FromForm;
 use uuid::Uuid;
 
-use crate::tracker::character::Character;
+use crate::tracker::character::{Character, Metatypes};
 
 #[derive(Serialize, Deserialize)]
 #[serde(crate = "rocket::serde")]
@@ -65,4 +65,45 @@ pub struct PlayerView
 pub struct NewGame<'r>
 {
     pub game_name: &'r str
+}
+
+#[derive(FromForm)]
+pub struct NewNpc<'r>
+{
+    pub npc_name: &'r str,
+    pub metatype: &'r str,
+}
+
+// impl <'r> Into<Character> for NewNpc<'r>
+// {
+//     fn into(self) -> Character {
+//         let metatype: Metatypes;
+//         match self.metatype
+//         {
+//             "Human" => {metatype = Metatypes::Human},
+//             "Dwarf" => {metatype = Metatypes::Dwarf},
+//             "Elf" => {metatype = Metatypes::Elf},
+//             "Orc" => {metatype = Metatypes::Orc},
+//             "Troll" => {metatype = Metatypes::Troll},
+//         }
+//         Character::new_npc(metatype, String::from(self.npc_name))
+//     }
+// }
+
+impl From<NewNpc<'_>> for Character
+{
+    fn from(npc: NewNpc<'_>) -> Self {
+        let metatype: Metatypes;
+        match npc.metatype
+        {
+            "Human" => {metatype = Metatypes::Human},
+            "Dwarf" => {metatype = Metatypes::Dwarf},
+            "Elf" => {metatype = Metatypes::Elf},
+            "Orc" => {metatype = Metatypes::Orc},
+            "Troll" => {metatype = Metatypes::Troll},
+            _ => {metatype = Metatypes::Human}
+        }
+
+        Character::new_npc(metatype, String::from(npc.npc_name))
+    }
 }
