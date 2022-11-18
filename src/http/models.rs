@@ -68,9 +68,9 @@ pub struct NewGame<'r>
 }
 
 #[derive(FromForm)]
-pub struct NewNpc<'r>
+pub struct NewCharacter<'r>
 {
-    pub npc_name: &'r str,
+    pub char_name: &'r str,
     pub metatype: &'r str,
 }
 
@@ -90,9 +90,9 @@ pub struct NewNpc<'r>
 //     }
 // }
 
-impl From<NewNpc<'_>> for Character
+impl From<NewCharacter<'_>> for Character
 {
-    fn from(npc: NewNpc<'_>) -> Self {
+    fn from(npc: NewCharacter<'_>) -> Self {
         let metatype: Metatypes;
         match npc.metatype
         {
@@ -104,6 +104,6 @@ impl From<NewNpc<'_>> for Character
             _ => {metatype = Metatypes::Human}
         }
 
-        Character::new_npc(metatype, String::from(npc.npc_name))
+        Character::new_npc(metatype, String::from(npc.char_name))
     }
 }
