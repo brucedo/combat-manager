@@ -195,7 +195,7 @@ pub async fn add_npc(id: Uuid, session: Session, state: &State<Metagame<'_>>, np
 }
 
 #[post("/game/<id>/add_pc", data="<pc>")]
-pub async fn add_pc(id: Uuid, session: Session, state: &State<Metagame<'_>>, pc: Form<NewCharacter<'_>>) -> Result<Redirect, Error>
+pub async fn add_pc(id: Uuid, _session: Session, state: &State<Metagame<'_>>, pc: Form<NewCharacter<'_>>) -> Result<Redirect, Error>
 {
     let character = Character::from(pc.into_inner());
     let (their_sender, my_receiver) = channel::<Outcome>();

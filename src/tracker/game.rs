@@ -352,7 +352,7 @@ impl Game {
     pub fn get_cast(self: &Game) -> Vec<Arc<Character>>
     {
         let mut result = Vec::new();
-        for (id, sheet) in &self.cast
+        for (_id, sheet) in &self.cast
         {
             result.push(sheet.clone());
         }
@@ -373,7 +373,7 @@ impl Game {
     fn filter_cast_by(self: &Game, player_owned: bool) -> Vec<Arc<Character>>
     {
         let mut result = Vec::new();
-        for (id, sheet) in &self.cast
+        for (_id, sheet) in &self.cast
         {
             if sheet.player_character == player_owned
             {
@@ -1096,7 +1096,7 @@ mod tests
         let mut game = Game::new();
 
         let mork_id = game.add_cast_member(mork);
-        let dorf_id = game.add_cast_member(dorf);
+        let _dorf_id = game.add_cast_member(dorf);
         let melf_id = game.add_cast_member(melf);
 
         let cast = game.get_pcs();
