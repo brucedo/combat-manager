@@ -164,10 +164,40 @@ pub async fn add_npc(id: Uuid, session: Session, state: &State<Metagame<'_>>, np
 
     if !state.validate_ownership(session.player_id(), id)
     {
-
+        // TODO: build a 403 tsk tsk tsk kinda
     }
 
     let character = Character::from(npc.into_inner());
+    let (their_sender, my_receiver) = channel::<Outcome>();
+    let msg = Message { game_id: id, reply_channel: their_sender, msg: Event::AddCharacter(character) };
+    if let Err(_err) = state.game_runner_pipe.clone().send(msg).await
+    {
+        return Err(Error::InternalServerError(Template::render("500", context! {action_name: "create a character", error: "The game runner closed its channel."})));
+    }
+
+    match my_receiver.await 
+    {
+        Ok(result) => 
+        {
+            match result
+            {
+                Outcome::CharacterAdded(_) => 
+                {
+                    // return Ok(Template::render("added", context!{game_id: id}));
+                    return Ok(Redirect::to(uri!(game_view(id))));
+                },
+                Outcome::Error(err) => {return Err(Error::InternalServerError(Template::render("500", context! {action_name: "create a character", error: err.message})))},
+                _ => {return Err(Error::InternalServerError(Template::render("500", context! {action_name: "create a character", error: "The Game replied with an unexpected message."})))}
+            }
+        },
+        Err(_err) => {return Err(Error::InternalServerError(Template::render("500", context! {action_name: "create a character", error: "The reply channel was closed."})))},
+    }
+}
+
+#[post("/game/<id>/add_pc", data="<pc>")]
+pub async fn add_pc(id: Uuid, session: Session, state: &State<Metagame<'_>>, pc: Form<NewCharacter<'_>>) -> Result<Redirect, Error>
+{
+    let character = Character::from(pc.into_inner());
     let (their_sender, my_receiver) = channel::<Outcome>();
     let msg = Message { game_id: id, reply_channel: their_sender, msg: Event::AddCharacter(character) };
     if let Err(_err) = state.game_runner_pipe.clone().send(msg).await

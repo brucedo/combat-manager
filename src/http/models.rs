@@ -72,6 +72,7 @@ pub struct NewCharacter<'r>
 {
     pub char_name: &'r str,
     pub metatype: &'r str,
+    pub is_npc: bool,
 }
 
 // impl <'r> Into<Character> for NewNpc<'r>
@@ -104,6 +105,8 @@ impl From<NewCharacter<'_>> for Character
             _ => {metatype = Metatypes::Human}
         }
 
-        Character::new_npc(metatype, String::from(npc.char_name))
+        let mut char = Character::new_npc(metatype, String::from(npc.char_name));
+        char.player_character = !npc.is_npc;
+        return char;
     }
 }

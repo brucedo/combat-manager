@@ -10,8 +10,8 @@
             <div class="game-notify-box"></div>
             <div class="game-action-box">
                 <div>
-                    <form action="/game/{{game_id}}/add_npc">
-                        <label for="npc_name">NPC Name: </label><input type="text" id="npc_name" name="name" required>
+                    <form action="/game/{{game_id}}/add_npc" method="post">
+                        <label for="npc_name">NPC Name: </label><input type="text" id="char_name" name="char_name" required>
                         <select id="npc_metatype" name="metatype">
                             <option value="Human">Human</option>
                             <option value="Troll">Troll</option>
@@ -19,6 +19,7 @@
                             <option value="Orc">Orc</option>
                             <option value="Elf">Elf</option>
                         </select>
+                        <input type="hidden" id="is_npc" name="is_npc" value="true">
                         <input type="submit" id="add_npc" name="add_npc" value="Add NPC">
                     </form>
                 </div>

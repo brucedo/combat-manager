@@ -4,5 +4,23 @@
     <link href="/res/static/scm.css">
 </head>
 <body>
-    <h1>Game {{game_id}}: Player interface</h1>
+    <div class="game-display-container">
+        <div class="game-left-box">
+            <div class="game-notify-box"></div>
+            <div class="game-action-box">
+                <form action="/game/{{game_id}}/add_pc" method="post">
+                        <label for="pc_name">PC Name: </label><input type="text" id="char_name" name="char_name" required>
+                        <select id="pc_metatype" name="metatype">
+                            <option value="Human">Human</option>
+                            <option value="Troll">Troll</option>
+                            <option value="Dwarf">Dwarf</option>
+                            <option value="Orc">Orc</option>
+                            <option value="Elf">Elf</option>
+                        </select>
+                        <input type="hidden" id="is_npc" name="is_npc" value="false">
+                        <input type="submit" id="add_pc" name="add_pc" value="Add PC">
+                    </form>
+            </div>
+        </div>
+        <div class="game-right-box"></div>
 </body>
