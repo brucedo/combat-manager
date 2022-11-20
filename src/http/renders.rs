@@ -3,7 +3,7 @@ use log::debug;
 use rocket::{get, post, State, response::Redirect, uri, form::{FromForm, Form}};
 use rocket_dyn_templates::{Template, context};
 use uuid::Uuid;
-use tokio::sync::{oneshot::channel};
+use tokio::sync::{oneshot::channel, mpsc::Sender};
 
 use crate::{gamerunner::{Message, Event, Outcome}, http::{session::NewSessionOutcome, models::NewGame}, tracker::character::Character};
 
@@ -33,38 +33,23 @@ pub async fn create_game(state: &State<Metagame<'_>>, session: Session, new_game
 {
     let my_sender = state.game_runner_pipe.clone();
 
-    let (their_sender, my_receiver) = channel();
-    let msg = Message { game_id: Uuid::new_v4(), reply_channel: their_sender, msg: Event::New };
+    let response = send_and_recv(Uuid::new_v4(), Event::New, my_sender).await?;
 
-    if let Err(err) = my_sender.send(msg).await
+    match response
     {
-        return Err(Error::InternalServerError(Template::render("error_pages/500", context! {action_name: "create a new game", error: err.to_string()})));
-    }
-
-    match my_receiver.await
-    {
-        Ok(response) => 
+        Outcome::Created(game_id) =>
+        {   
+            
+            state.new_game(game_id, session.player_id(), String::from(new_game.game_name), uri!(game_view(game_id)));
+            return Ok(Redirect::to(uri!(game_view(game_id))));
+        }
+        _ =>
         {
-            match response
-            {
-                Outcome::Created(game_id) =>
-                {   
-                    
-                    state.new_game(game_id, session.player_id(), String::from(new_game.game_name), uri!(game_view(game_id)));
-                    return Ok(Redirect::to(uri!(game_view(game_id))));
-                }
-                _ =>
-                {
-                    let err = "Boy howdy, something really went south here.  We received a completely unexpected message type from the GameRunner for creating a game.";
-                    return Err(Error::InternalServerError(Template::render("error_pages/500", context! {action_name: "create a new game", error: err})));
-                }
-            }
-        },
-        Err(err) => 
-        {
-            return Err(Error::InternalServerError(Template::render("error_pages/500", context! {action_name: "create a new game", error: err.to_string()})));
-        },
+            let err = "Boy howdy, something really went south here.  We received a completely unexpected message type from the GameRunner for creating a game.";
+            return Err(Error::InternalServerError(Template::render("error_pages/500", context! {action_name: "create a new game", error: err})));
+        }
     }
+    
 
 }
 
@@ -80,82 +65,70 @@ pub async fn game_view(id: Uuid, session: Session, state: &State<Metagame<'_>>) 
         return Err(Error::NotFound(Template::render("error_pages/404", context!{})));
     }
 
-    let (their_sender, my_receiver) = channel::<Outcome>();
-    let my_sender = state.game_runner_pipe.clone();
-    if let Err(_) = my_sender.send(Message{ game_id: id, reply_channel: their_sender, msg: Event::GetPcCast }).await
-    {
-        return Err(Error::InternalServerError(Template::render("error_pages/500", context!{action_name: "get list of PCs", error: "The game runner closed its channel."})));
-    }
-
-    match my_receiver.await
-    {
-        Ok(outcome) => 
-        {
-            match outcome
-            {
-                Outcome::CastList(cast) => 
-                {
-                    pcs = Vec::with_capacity(cast.len());
-                    debug!("Converting Character to SimpleCharacterView for {} records", cast.len());
-                    for member in cast
-                    {
-                        pcs.push(SimpleCharacterView::from(member.as_ref()));
-                    }
-                }
-                _ => 
-                {
-                    let err = "Boy howdy, something really went south here.  We received a completely unexpected message type from the GameRunner for creating a game.";
-                    return Err(Error::InternalServerError(Template::render("error_pages/500", context! {action_name: "create a new game", error: err})));
-                }
-            }
-        },
-        Err(_) => 
-        {
-            return Err(Error::InternalServerError(Template::render("error_pages/500", context!{action_name: "get list of PCs", error: "The one-shot channel closed."})));            
-        }
-    }
-
-    let (their_sender, my_receiver) = channel::<Outcome>();
-    if let Err(_) = my_sender.send(Message{ game_id: id, reply_channel: their_sender, msg: Event::GetNpcCast }).await
-    {
-        return Err(Error::InternalServerError(Template::render("error_pages/500", context!{action_name: "get list of PCs", error: "The game runner closed its channel."})));
-    }
-
-    match my_receiver.await
-    {
-        Ok(outcome) => 
-        {
-            match outcome
-            {
-                Outcome::CastList(cast) => 
-                {
-                    npcs = Vec::with_capacity(cast.len());
-                    for member in cast
-                    {
-                        npcs.push(SimpleCharacterView::from(member.as_ref()));
-                    }
-                }
-                _ => 
-                {
-                    let err = "Boy howdy, something really went south here.  We received a completely unexpected message type from the GameRunner for creating a game.";
-                    return Err(Error::InternalServerError(Template::render("error_pages/500", context! {action_name: "create a new game", error: err})));
-                }
-            }
-        },
-        Err(_) => 
-        {
-            return Err(Error::InternalServerError(Template::render("error_pages/500", context!{action_name: "get list of PCs", error: "The one-shot channel closed."})));            
-        }
-    }
-
     if state.validate_ownership( session.player_id(), id)
     {
-        return Ok(Template::render("gm_view", GMView{game_id:id, pcs, npcs }));
+        build_player_view(id, &session, state).await
     }
     else 
     {
-        return Ok(Template::render("player_view", PlayerView{game_id: id, game_name: game_name.unwrap()}));
+        build_gm_view(id, &session, state).await
+    } 
+
+}
+
+async fn build_player_view(game_id: Uuid, session: &Session, state: &State<Metagame<'_>>) -> Result<Template, Error>
+{
+    let game_name = state.game_name(game_id).unwrap_or(String::from(""));
+    let view = PlayerView {game_id, game_name};
+
+    Ok(Template::render("player_view", view))
+}
+
+async fn build_gm_view(game_id: Uuid, sesion: &Session, state: &State<Metagame<'_>>) -> Result<Template, Error>
+{
+    let outcome = send_and_recv(game_id, Event::GetPcCast, state.game_runner_pipe.clone()).await?;
+    let mut pcs: Vec<SimpleCharacterView>;
+    let mut npcs: Vec<SimpleCharacterView>;
+    let game_name = state.game_name(game_id).unwrap_or(String::from(""));
+
+    match outcome
+    {
+        Outcome::CastList(cast) => 
+        {
+            pcs = Vec::with_capacity(cast.len());
+            debug!("Converting Character to SimpleCharacterView for {} records", cast.len());
+            for member in cast
+            {
+                pcs.push(SimpleCharacterView::from(member.as_ref()));
+            }
+        }
+        _ => 
+        {
+            let err = "Boy howdy, something really went south here.  We received a completely unexpected message type from the GameRunner for creating a game.";
+            return Err(Error::InternalServerError(Template::render("error_pages/500", context! {action_name: "create a new game", error: err})));
+        }
     }
+
+    let outcome = send_and_recv(game_id, Event::GetNpcCast, state.game_runner_pipe.clone()).await?;
+    
+    match outcome
+    {
+        Outcome::CastList(cast) => 
+        {
+            npcs = Vec::with_capacity(cast.len());
+            for member in cast
+            {
+                npcs.push(SimpleCharacterView::from(member.as_ref()));
+            }
+        }
+        _ => 
+        {
+            let err = "Boy howdy, something really went south here.  We received a completely unexpected message type from the GameRunner for creating a game.";
+            return Err(Error::InternalServerError(Template::render("error_pages/500", context! {action_name: "create a new game", error: err})));
+        }
+    }
+
+    return Ok(Template::render("player_view", PlayerView{game_id: game_id, game_name: game_name}));
 }
 
 #[post("/game/<id>/add_npc", data="<npc>")]
@@ -168,60 +141,42 @@ pub async fn add_npc(id: Uuid, session: Session, state: &State<Metagame<'_>>, np
     }
 
     let character = Character::from(npc.into_inner());
-    let (their_sender, my_receiver) = channel::<Outcome>();
-    let msg = Message { game_id: id, reply_channel: their_sender, msg: Event::AddCharacter(character) };
-    if let Err(_err) = state.game_runner_pipe.clone().send(msg).await
-    {
-        return Err(Error::InternalServerError(Template::render("500", context! {action_name: "create a character", error: "The game runner closed its channel."})));
-    }
+    
+    let result = send_and_recv(id, Event::AddCharacter(character), state.game_runner_pipe.clone()).await?;
 
-    match my_receiver.await 
+    match result
     {
-        Ok(result) => 
+        Outcome::CharacterAdded(_) => 
         {
-            match result
-            {
-                Outcome::CharacterAdded(_) => 
-                {
-                    // return Ok(Template::render("added", context!{game_id: id}));
-                    return Ok(Redirect::to(uri!(game_view(id))));
-                },
-                Outcome::Error(err) => {return Err(Error::InternalServerError(Template::render("500", context! {action_name: "create a character", error: err.message})))},
-                _ => {return Err(Error::InternalServerError(Template::render("500", context! {action_name: "create a character", error: "The Game replied with an unexpected message."})))}
-            }
+            // return Ok(Template::render("added", context!{game_id: id}));
+            return Ok(Redirect::to(uri!(game_view(id))));
         },
-        Err(_err) => {return Err(Error::InternalServerError(Template::render("500", context! {action_name: "create a character", error: "The reply channel was closed."})))},
+        Outcome::Error(err) => {return Err(Error::InternalServerError(Template::render("500", context! {action_name: "create a character", error: err.message})))},
+        _ => {return Err(Error::InternalServerError(Template::render("500", context! {action_name: "create a character", error: "The Game replied with an unexpected message."})))}
     }
+    
+
 }
 
 #[post("/game/<id>/add_pc", data="<pc>")]
-pub async fn add_pc(id: Uuid, _session: Session, state: &State<Metagame<'_>>, pc: Form<NewCharacter<'_>>) -> Result<Redirect, Error>
+pub async fn add_pc(id: Uuid, session: Session, state: &State<Metagame<'_>>, pc: Form<NewCharacter<'_>>) -> Result<Redirect, Error>
 {
     let character = Character::from(pc.into_inner());
-    let (their_sender, my_receiver) = channel::<Outcome>();
-    let msg = Message { game_id: id, reply_channel: their_sender, msg: Event::AddCharacter(character) };
-    if let Err(_err) = state.game_runner_pipe.clone().send(msg).await
-    {
-        return Err(Error::InternalServerError(Template::render("500", context! {action_name: "create a character", error: "The game runner closed its channel."})));
-    }
 
-    match my_receiver.await 
+    let result = send_and_recv(id, Event::AddCharacter(character), state.game_runner_pipe.clone()).await?;
+    
+    match result
     {
-        Ok(result) => 
+        Outcome::CharacterAdded(char_id) => 
         {
-            match result
-            {
-                Outcome::CharacterAdded(_) => 
-                {
-                    // return Ok(Template::render("added", context!{game_id: id}));
-                    return Ok(Redirect::to(uri!(game_view(id))));
-                },
-                Outcome::Error(err) => {return Err(Error::InternalServerError(Template::render("500", context! {action_name: "create a character", error: err.message})))},
-                _ => {return Err(Error::InternalServerError(Template::render("500", context! {action_name: "create a character", error: "The Game replied with an unexpected message."})))}
-            }
+            session.add_pc(id, char_id);
+            return Ok(Redirect::to(uri!(game_view(id))));
         },
-        Err(_err) => {return Err(Error::InternalServerError(Template::render("500", context! {action_name: "create a character", error: "The reply channel was closed."})))},
+        Outcome::Error(err) => {return Err(Error::InternalServerError(Template::render("500", context! {action_name: "create a character", error: err.message})))},
+        _ => {return Err(Error::InternalServerError(Template::render("500", context! {action_name: "create a character", error: "The Game replied with an unexpected message."})))}
     }
+    
+    
 }
 
 #[get("/<_..>", rank = 11)]
@@ -241,4 +196,21 @@ pub async fn new_session(_proof_of_session: NewSessionOutcome, session: Session,
 {
     session.set_handle(String::from(submission.player_handle));
     Redirect::to(uri!("/"))
+}
+
+async fn send_and_recv(game_id: Uuid, body: Event, sender: Sender<Message>) -> Result<Outcome, Error>
+{
+    let (their_sender, my_receiver) = channel::<Outcome>();
+    let msg = Message { game_id, reply_channel: their_sender, msg: body };
+    if let Err(_err) = sender.send(msg).await
+    {
+        return Err(Error::InternalServerError(Template::render("500", context! {action_name: "create a character", error: "The game runner closed its channel."})));
+    }
+
+    match my_receiver.await 
+    {
+        Ok(outcome) => Ok(outcome),
+        Err(_err) => 
+            Err(Error::InternalServerError(Template::render("500", context! {action_name: "create a character", error: "The reply channel was closed."}))),
+    }
 }

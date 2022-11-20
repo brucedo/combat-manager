@@ -9,13 +9,20 @@ pub struct SessionData
     pub gm_of_games: Vec<Uuid>,
     pub handle: Arc<String>,
     pub player_id: Arc<Uuid>,
+    pub game_to_character: HashMap<Uuid, Uuid>
 }
 
 impl SessionData
 {
     pub fn new() -> SessionData
     {
-        SessionData { gm_of_games: Vec::new(), handle: Arc::new(String::from("__none__")), player_id: Arc::new(Uuid::new_v4()) }
+        SessionData 
+        { 
+            gm_of_games: Vec::new(), 
+            handle: Arc::new(String::from("__none__")), 
+            player_id: Arc::new(Uuid::new_v4()),
+            game_to_character: HashMap::new(), 
+        }
     }
 }
 
@@ -58,6 +65,27 @@ impl Session
     pub fn player_id(&self) -> Uuid
     {
         (*self.session_data.lock().player_id).clone()
+    }
+
+    pub fn add_pc(&self, game_id: Uuid, char_id: Uuid)
+    {
+        let mut data = self.session_data.lock();
+
+        data.game_to_character.insert(game_id, char_id);
+    }
+
+    pub fn has_character_for(&self, game_id: Uuid) -> bool
+    {
+        self.session_data.lock().game_to_character.contains_key(&game_id)
+    }
+
+    pub fn character_id(&self, game_id: Uuid) -> Option<Uuid>
+    {
+        let data = self.session_data.lock();
+        match data.game_to_character.get(&game_id) {
+            Some(id) => Some(id.clone()),
+            None => None,
+        }
     }
 }
 
