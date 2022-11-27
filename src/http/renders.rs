@@ -57,8 +57,6 @@ pub async fn create_game(state: &State<Metagame<'_>>, session: Session, new_game
 pub async fn game_view(id: Uuid, session: Session, state: &State<Metagame<'_>>) -> Result<Template, Error>
 {
     let game_name = state.game_name(id);
-    let mut pcs: Vec<SimpleCharacterView>;
-    let mut npcs: Vec<SimpleCharacterView>;
 
     if game_name.is_none()
     {
@@ -67,11 +65,12 @@ pub async fn game_view(id: Uuid, session: Session, state: &State<Metagame<'_>>) 
 
     if state.validate_ownership( session.player_id(), id)
     {
-        build_player_view(id, &session, state).await
+        build_gm_view(id, &session, state).await
+        
     }
     else 
     {
-        build_gm_view(id, &session, state).await
+        build_player_view(id, &session, state).await
     } 
 
 }
@@ -79,7 +78,28 @@ pub async fn game_view(id: Uuid, session: Session, state: &State<Metagame<'_>>) 
 async fn build_player_view(game_id: Uuid, session: &Session, state: &State<Metagame<'_>>) -> Result<Template, Error>
 {
     let game_name = state.game_name(game_id).unwrap_or(String::from(""));
-    let view = PlayerView {game_id, game_name};
+    let view: PlayerView;
+
+    if session.has_character_for(game_id)
+    {
+        match send_and_recv(game_id, Event::GetCharacter(session.character_id(game_id).unwrap()), state.game_runner_pipe.clone()).await?
+        {
+            Outcome::Found(char) => 
+            {
+                view = PlayerView {player_handle: session.handle_as_ref(), game_id, game_name, character_state: Some(SimpleCharacterView::from(char.unwrap().as_ref()))};
+            }
+            _ => {
+                let err = "Boy howdy, something really went south here.  We received a completely unexpected message type from the GameRunner for creating a game.";
+                return Err(Error::InternalServerError(Template::render("error_pages/500", context! {action_name: "create a new game", error: err})));
+            }
+        }
+    }
+    else
+    {
+        view = PlayerView {player_handle: session.handle_as_ref(), game_id, game_name, character_state: None };
+    }
+
+    // let view = PlayerView {game_id, game_name, character_state: None };
 
     Ok(Template::render("player_view", view))
 }
@@ -128,7 +148,7 @@ async fn build_gm_view(game_id: Uuid, sesion: &Session, state: &State<Metagame<'
         }
     }
 
-    return Ok(Template::render("player_view", PlayerView{game_id: game_id, game_name: game_name}));
+    return Ok(Template::render("gm_view", GMView { game_id, pcs, npcs }));
 }
 
 #[post("/game/<id>/add_npc", data="<npc>")]
@@ -154,8 +174,6 @@ pub async fn add_npc(id: Uuid, session: Session, state: &State<Metagame<'_>>, np
         Outcome::Error(err) => {return Err(Error::InternalServerError(Template::render("500", context! {action_name: "create a character", error: err.message})))},
         _ => {return Err(Error::InternalServerError(Template::render("500", context! {action_name: "create a character", error: "The Game replied with an unexpected message."})))}
     }
-    
-
 }
 
 #[post("/game/<id>/add_pc", data="<pc>")]

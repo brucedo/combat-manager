@@ -1,11 +1,12 @@
-use rocket::serde::{Serialize, Deserialize};
+use std::sync::Arc;
+
+use rocket::serde::{Serialize, Deserialize, self};
 use rocket::form::FromForm;
 use uuid::Uuid;
 
 use crate::tracker::character::{Character, Metatypes};
 
 #[derive(Serialize, Deserialize)]
-#[serde(crate = "rocket::serde")]
 pub struct IndexModel<'r>
 {
     pub player_handle: &'r str,
@@ -13,7 +14,6 @@ pub struct IndexModel<'r>
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(crate = "rocket::serde")]
 pub struct GameSummary
 {
     pub game_name: String,
@@ -22,7 +22,6 @@ pub struct GameSummary
 }
 
 #[derive(Serialize)]
-#[serde(crate = "rocket::serde")]
 pub struct GMView
 {
     pub game_id: Uuid,
@@ -31,34 +30,43 @@ pub struct GMView
 }
 
 #[derive(Serialize)]
-#[serde(crate = "rocket::serde")]
 pub struct SimpleCharacterView
 {
     pub char_name: String,
     pub char_id: Uuid,
+    pub metatype: Metatypes,
 }
 
 impl From<Character> for SimpleCharacterView
 {
     fn from(src: Character) -> Self {
-        SimpleCharacterView { char_name: src.name.clone(), char_id: src.id.clone() }
+        SimpleCharacterView { char_name: src.name.clone(), char_id: src.id.clone(), metatype: src.metatype }
     }
 }
 
 impl From<&Character> for SimpleCharacterView
 {
     fn from(src: &Character) -> Self {
-        SimpleCharacterView { char_name: src.name.clone(), char_id: src.id.clone() }
+        SimpleCharacterView { char_name: src.name.clone(), char_id: src.id.clone(), metatype: src.metatype }
     }
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(crate = "rocket::serde")]
+#[derive(Serialize)]
 pub struct PlayerView
 {
+    pub player_handle: Arc<String>,
     pub game_id: Uuid,
     pub game_name: String,
+    pub character_state: Option<SimpleCharacterView>
 }
+
+// #[derive(Serialize)]
+// #[serde(crate = "rocket::serde")]
+// pub enum CharacterState 
+// {
+//     Generated(SimpleCharacterView),
+//     NotGenerated
+// }
 
 
 #[derive(FromForm)]
@@ -74,22 +82,6 @@ pub struct NewCharacter<'r>
     pub metatype: &'r str,
     pub is_npc: bool,
 }
-
-// impl <'r> Into<Character> for NewNpc<'r>
-// {
-//     fn into(self) -> Character {
-//         let metatype: Metatypes;
-//         match self.metatype
-//         {
-//             "Human" => {metatype = Metatypes::Human},
-//             "Dwarf" => {metatype = Metatypes::Dwarf},
-//             "Elf" => {metatype = Metatypes::Elf},
-//             "Orc" => {metatype = Metatypes::Orc},
-//             "Troll" => {metatype = Metatypes::Troll},
-//         }
-//         Character::new_npc(metatype, String::from(self.npc_name))
-//     }
-// }
 
 impl From<NewCharacter<'_>> for Character
 {

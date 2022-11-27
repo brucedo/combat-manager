@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use log::debug;
 use parking_lot::RwLock;
 use rocket::http::uri::Origin;
 use tokio::sync::mpsc::Sender;
@@ -30,10 +31,13 @@ impl<'s> Metagame<'s>
 
     pub fn validate_ownership(&self, player_id: Uuid, game_id: Uuid) -> bool
     {
+        debug!("Attempting to validate ownership of the game given by ID.");
         let lock = self.game_details.read();
 
         if let Some(game) = lock.get(&game_id)
         {
+            debug!("Thisg game's GM id is: {}", game.gm_id);
+            debug!("This player's id is: {}", player_id);
             return  game.gm_id == player_id;
         }
         else {return false};

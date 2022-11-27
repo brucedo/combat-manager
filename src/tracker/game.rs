@@ -337,18 +337,6 @@ impl Game {
         return undeclared;
     }
 
-    // pub fn get_from_characters<'a, T>(self: &'a Game) -> Vec<T>
-    // where T: From<&'a Character>
-    // {
-    //     let mut result = Vec::new();
-    //     for (id, sheet) in &self.cast
-    //     {
-    //         result.push(sheet.into());
-    //     }
-
-    //     return result;
-    // }
-
     pub fn get_cast(self: &Game) -> Vec<Arc<Character>>
     {
         let mut result = Vec::new();
@@ -382,6 +370,18 @@ impl Game {
         }
 
         return result;
+    }
+
+    pub fn get_cast_by_id(self: &Game, char_id: Uuid) -> Option<Arc<Character>>
+    {
+        if self.cast.contains_key(&char_id)
+        {
+            Some(self.cast.get(&char_id).unwrap().clone())
+        }
+        else
+        {
+            None
+        }
     }
 
 
@@ -1127,6 +1127,49 @@ mod tests
         let ids = game.get_pcs();
 
         assert!(ids.is_empty());
+    }
+
+    #[test]
+    pub fn get_cast_by_id_returns_some_with_character_if_character_id_is_in_cast()
+    {
+        let mut mork = build_orc();
+        let mut dorf = build_dwarf();
+        let mut melf = build_elf();
+
+        mork.player_character = false;
+        dorf.player_character = true;
+        melf.player_character = false;
+
+        let mut game = Game::new();
+
+        let _mork_id = game.add_cast_member(mork);
+        let dorf_id = game.add_cast_member(dorf);
+        let _melf_id = game.add_cast_member(melf);
+
+        assert!(game.get_cast_by_id(dorf_id).is_some());
+        let found_dorf = game.get_cast_by_id(dorf_id).unwrap();
+        assert_eq!(dorf_id, found_dorf.id);
+        
+    }
+
+    #[test]
+    pub fn get_cast_by_id_returns_none_if_character_id_is_in_not_cast()
+    {
+        let mut mork = build_orc();
+        let mut dorf = build_dwarf();
+        let mut melf = build_elf();
+
+        mork.player_character = false;
+        dorf.player_character = true;
+        melf.player_character = false;
+
+        let mut game = Game::new();
+
+        let _mork_id = game.add_cast_member(mork);
+        let _dorf_id = game.add_cast_member(dorf);
+        let _melf_id = game.add_cast_member(melf);
+
+        assert!(game.get_cast_by_id(Uuid::new_v4()).is_some());
     }
 
     #[test]

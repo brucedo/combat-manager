@@ -50,6 +50,10 @@ pub async fn game_runner(mut message_queue: Receiver<Message>)
                 debug!("Reqeust is to get the PC cast list.");
                 response = find_game_and_act(&mut running_games, game_id, get_pcs);
             }
+            Event::GetCharacter(id) => {
+                debug!("Request is to get a character by id.");
+                response = find_game_and_act(&mut running_games, game_id, |game| {get_char(id, game)})
+            }
             Event::StartCombat(combatants) => {
                 debug!("Request is to start the combat phase.");                
                 response = find_game_and_act(&mut running_games, game_id, | game | {start_combat(combatants, game)})
@@ -172,6 +176,11 @@ fn get_npcs(game: &mut Game) -> Outcome
 fn get_pcs(game: &mut Game) -> Outcome
 {
     Outcome::CastList(game.get_pcs())
+}
+
+fn get_char(char_id:Uuid, game: &mut Game) -> Outcome
+{
+    Outcome::Found(game.get_cast_by_id(char_id))
 }
 
 fn start_combat(combatants: Vec<Uuid>, game: &mut Game) -> Outcome
@@ -448,6 +457,7 @@ pub enum Event
     GetFullCast,
     GetNpcCast,
     GetPcCast,
+    GetCharacter(Uuid),
     StartCombat(Vec<Uuid>),
     AddInitiativeRoll(Roll),
     BeginInitiativePhase,
@@ -475,6 +485,7 @@ pub enum Outcome
     Summaries(Vec<(Uuid, String)>),
     Created(Uuid),
     CastList(Vec<Arc<Character>>),
+    Found(Option<Arc<Character>>),
     Destroyed,
     Error(Error),
     CharacterAdded(Uuid),
