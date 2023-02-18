@@ -5,3 +5,4 @@ pub mod renders;
 pub mod errors;
 pub mod session;
 pub mod metagame;
+pub mod messaging;

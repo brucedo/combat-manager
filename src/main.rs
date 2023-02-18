@@ -13,6 +13,7 @@ use crate::gamerunner::Message;
 use crate::http::metagame::Metagame;
 use crate::http::server::{new_game, get_example_char, add_new_character, change_game_state, get_state_demo};
 use crate::http::renders::{index, create_game, game_view, no_session, new_session, add_npc, add_pc};
+use crate::http::messaging::start_message_stream;
 use crate::http::session::SessionMap;
 
 #[rocket::main]
@@ -48,6 +49,7 @@ async fn main() {
         .manage(session_map)
         .mount("/res", FileServer::from(relative!("resources/static")))
         .mount("/api", routes![new_game, get_example_char, add_new_character, change_game_state, get_state_demo])
+        .mount("/messages", routes![start_message_stream])
         .mount("/", routes![index, create_game, game_view, no_session, new_session, add_npc, add_pc])
         .attach(Template::fairing())
         .launch()
