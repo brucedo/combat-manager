@@ -1,7 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use log::{debug, error};
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::mpsc::{Receiver, Sender};
 use uuid::Uuid;
 
 use crate::tracker::{game::{Game, ActionType}, character::Character};
@@ -453,6 +453,8 @@ pub enum Event
     Enumerate,
     New,
     Delete,
+    NewPlayer,
+    JoinGame(Uuid),
     AddCharacter(Character),
     GetFullCast,
     GetNpcCast,
@@ -482,7 +484,9 @@ pub enum Event
 
 pub enum Outcome
 {
+    NewPlayer(PlayerState),
     Summaries(Vec<(Uuid, String)>),
+    JoinedGame(GameState),
     Created(Uuid),
     CastList(Vec<Arc<Character>>),
     Found(Option<Arc<Character>>),
@@ -544,6 +548,24 @@ pub struct TurnAdvanced
     pub on_deck: Vec<Uuid>,
 }
 
+pub struct PlayerState
+{
+    pub player_id: Uuid,
+    pub player_games: HashSet<Uuid>,
+    pub player_characters: HashSet<Uuid>,
+    pub player_sender: Sender<GameUpdates>
+}
+
+pub struct GameState
+{
+
+}
+
+pub struct GameUpdates
+{
+
+}
+
 #[derive(PartialEq)]
 pub enum ErrorKind
 {
@@ -579,6 +601,7 @@ mod tests
 
     use super::ErrorKind;
     use super::Message;
+    use super::PlayerState;
     use super::Roll;
 
     pub fn init() -> Sender<Message> {
@@ -618,6 +641,99 @@ mod tests
         }
     }
 
+    pub async fn player_join_game(game_input_channel: &Sender<Message>, game_id: Uuid) -> PlayerState
+    {
+        let (game_sender, game_receiver) = channel();
+        
+        let msg = Message {game_id, reply_channel: game_sender, msg: Event::NewPlayer};
+
+        if let Err(_) = game_input_channel.send(msg).await 
+        {
+            panic!("The game runner input channel closed prematurely.");
+        };
+
+        return match game_receiver.await
+        {
+            Ok(from_game) =>
+            {
+                match from_game
+                {
+                    Outcome::NewPlayer(player_state) => player_state,
+                    _ => panic!("Was expecting NewPlayer registration confirmation.")
+                }
+            }
+            Err(_) => panic!("Game input channel has closed.")
+        }
+    }
+
+    #[tokio::test]
+    pub async fn if_a_person_wishes_to_play_they_must_register_as_a_player_to_get_a_player_id()
+    {
+        let game_input_channel = init();
+        let (game_sender, game_receiver) = channel();
+        let game_id = add_new_game(&game_input_channel).await;
+
+        let msg = Message {game_id, reply_channel: game_sender, msg: Event::NewPlayer};
+
+        if let Err(_) = game_input_channel.send(msg).await 
+        {
+            panic!("The game runner input channel closed prematurely.");
+        };
+
+        match game_receiver.await
+        {
+            Ok(from_game) =>
+            {
+                match from_game
+                {
+                    Outcome::NewPlayer(_player_state) => {}
+                    _ => panic!("Was expecting NewPlayer registration confirmation.")
+                }
+            }
+            Err(_) => panic!("Game input channel has closed.")
+        }
+    }
+
+    #[tokio::test]
+    pub async fn when_a_new_player_joins_a_game_they_receive_a_game_state_return_value()
+    {
+        let game_input_channel = init();
+        let game_id = add_new_game(&game_input_channel).await;
+
+        let player_state = player_join_game(&game_input_channel, game_id).await;
+
+        let (game_sender, game_receiver) = channel();
+        let msg = Message {game_id, reply_channel: game_sender, msg: Event::JoinGame(player_state.player_id)};
+
+        if let Err(_) = game_input_channel.send(msg).await 
+        {
+            panic!("The game runner input channel closed prematurely.");
+        };
+
+        match game_receiver.await 
+        {
+            Ok(outcome) =>
+            {
+                match outcome 
+                {
+                    Outcome::JoinedGame(_) => 
+                    {
+                        // This is an acceptable return state.
+                    }
+                    _ => {panic!("Received an unexpected response - should have been JoinedGame.")}
+                }
+            }
+            Err(_) => panic!("The GameRunner should have returned a current GameState object along with my update messaging channel.")
+        }
+    }
+
+    #[tokio::test]
+    pub async fn if_a_player_joins_a_second_game_they_will_not_receive_a_new_update_message_channel()
+    {
+
+    }
+
+
     pub fn create_character() -> Character
     {
         let names: [&str; 5] = ["Matrox", "El See-Dee", "BusShock", "Junkyard", "Lo Hax"];
@@ -656,6 +772,8 @@ mod tests
             Err(_) => {panic!("Channel closed.")}
         }
     }
+
+    
 
     #[tokio::test]
     pub async fn enumerating_games_before_creating_a_game_will_return_an_empty_list()
