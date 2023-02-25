@@ -1153,7 +1153,7 @@ mod tests
     }
 
     #[test]
-    pub fn get_cast_by_id_returns_none_if_character_id_is_in_not_cast()
+    pub fn get_cast_by_id_returns_none_if_character_id_is_not_in_cast()
     {
         let mut mork = build_orc();
         let mut dorf = build_dwarf();
@@ -1169,7 +1169,7 @@ mod tests
         let _dorf_id = game.add_cast_member(dorf);
         let _melf_id = game.add_cast_member(melf);
 
-        assert!(game.get_cast_by_id(Uuid::new_v4()).is_some());
+        assert!(game.get_cast_by_id(Uuid::new_v4()).is_none());
     }
 
     #[test]
