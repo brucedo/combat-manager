@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::tracker::{game::{Game, ActionType}, character::Character};
 
-
+pub mod registry;
 
 pub async fn game_runner(mut message_queue: Receiver<Message>)
 {
