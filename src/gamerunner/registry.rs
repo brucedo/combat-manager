@@ -154,6 +154,16 @@ impl <'a> GameRegistry
         }
     }
 
+    pub fn enumerate_games(&self) -> HashSet<Uuid>
+    {
+
+    }
+
+    pub fn enumerate_players(&self) -> HashSet<Uuid>
+    {
+
+    }
+
     pub fn delete_game(&mut self, game_id: Uuid) -> Result<(), ()>
     {
         if let Some(game) = self.games.remove(&game_id)
@@ -177,6 +187,11 @@ impl <'a> GameRegistry
         {
             return Err(())
         }
+    }
+
+    pub fn unregister_player(&mut self, player_id: Uuid) -> Result<(), ()>
+    {
+
     }
 }
 
@@ -324,6 +339,25 @@ pub mod tests
     }
 
     #[test]
+    pub fn a_full_list_of_registered_players_may_be_retrieved_with_enumerate_player()
+    {
+        let registry = GameRegistry::new();
+        let player_1 = Uuid::new_v4();
+        let (sender_1, _) = channel(32);
+        let player_2 = Uuid::new_v4();
+        let (sender_2, _) = channel(32);
+
+        registry.register_player(player_1, sender_1);
+        registry.register_player(player_2, sender_2);
+
+        let registered_players = registry.enumerate_players();
+
+        assert!(registered_players.len() == 2);
+        assert!(registered_players.contains(&player_1));
+        assert!(registered_players.contains(&player_2));
+    }
+
+    #[test]
     pub fn if_the_argument_to_games_by_player_does_not_resolve_to_a_registered_player_none_is_returned()
     {
         init();
@@ -370,6 +404,26 @@ pub mod tests
         assert!(players.contains(&player_2));
         assert!(players.contains(&player_3));
     }
+
+    #[test]
+    pub fn if_a_game_exists_but_has_no_players_a_reference_to_an_empty_set_is_returned()
+    {
+        init();
+
+        let mut registry = GameRegistry::new();
+
+        let game_1 = Uuid::new_v4();
+        let player_1 = Uuid::new_v4();
+        let (sender_1, _) = channel(32);
+
+        registry.new_game(game_1, Game::new());
+        registry.register_player(player_1, sender_1);
+        
+        let players = registry.players_by_game(game_1);
+        assert!(players.is_some());
+        assert!(players.unwrap().len() == 0);
+    }
+
 
     #[test]
     pub fn if_the_argument_to_players_by_game_does_not_resolve_to_a_real_game_then_none_is_returned()
@@ -470,6 +524,39 @@ pub mod tests
         let mut registry = GameRegistry::new();
 
         assert!(registry.delete_game(Uuid::new_v4()).is_err());
+    }
+
+    pub fn when_a_player_unregisters_they_are_removed_from_all_games_they_are_part_of()
+    {
+        init();
+        let  mut registry = GameRegistry::new();
+
+        let player_1 = Uuid::new_v4();
+        let (sender_1, _) = channel(32);
+        let player_2 = Uuid::new_v4();
+        let (sender_2, _) = channel(32);
+
+        let game_1 = Uuid::new_v4();
+        let game_2 = Uuid::new_v4();
+
+        registry.new_game(game_1, Game::new());
+        registry.new_game(game_2, Game::new());
+        registry.register_player(player_1, sender_1);
+        registry.register_player(player_2, sender_2);
+
+        registry.join_game(player_1, game_1);
+        registry.join_game(player_2, game_1);
+        registry.join_game(player_1, game_2);
+
+        registry.unregister_player(player_1);
+
+        let players = registry.players_by_game(game_1);
+        assert!(players.is_some() && players.unwrap().contains(&player_2));
+        assert!(!players.unwrap().contains(&player_1));
+
+        let players = registry.players_by_game(game_2);
+        assert!(players.is_some());
+        assert!(players.unwrap().len() == 0);
     }
 
 }
