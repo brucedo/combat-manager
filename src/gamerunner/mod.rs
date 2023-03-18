@@ -14,8 +14,6 @@ pub async fn game_runner(mut message_queue: Receiver<Message>)
     // set up whatever we're going to use to store running games.  For now, a simple HashMap will do.
     debug!("Game runner started.");
     let mut directory = GameRegistry::new();
-    // let mut game_directory = HashMap::<Uuid, GameDirectoryEntry>::new();
-    // let mut player_directory = HashMap::<Uuid, PlayerDirectoryEntry>::new();
 
     while let Some(message) = message_queue.recv().await
     {
@@ -175,13 +173,22 @@ fn end_game(game: Uuid, directory: &mut GameRegistry) -> Outcome
 
 fn register_player(player_directory: &mut GameRegistry) -> Outcome
 {
-    let player_id = Uuid::new_v4();
+    let mut player_id = Uuid::new_v4();
+
+    while player_directory.is_registered(player_id)
+    {
+        player_id = Uuid::new_v4();
+    }
     let (player_sender, player_receiver) = channel(32);
     let player_info = NewPlayer{ player_id, player_receiver };   
 
-    player_directory.register_player(player_id, player_sender);
+    match player_directory.register_player(player_id, player_sender)
+    {
+        Ok(_) => {Outcome::NewPlayer(player_info)},
+        Err(_) => {unreachable!("Duplicate ID encountered despite explicitly checking for duplicate ID before joining")}
+    }
 
-    return Outcome::NewPlayer(player_info);
+    // return Outcome::NewPlayer(player_info);
 }
 
 fn is_registered_player(player_id: Uuid, player_directory: &GameRegistry) -> bool
@@ -195,6 +202,15 @@ fn join_game(player_id: Uuid, game_id: Uuid, game_directory: &mut GameRegistry) 
     {
         Ok(_) => 
         {
+            let potential_players = game_directory.players_by_game(game_id);
+            if potential_players.is_some()
+            {
+                for player in potential_players.unwrap()
+                {
+                    game_directory.get_player_sender(*player);
+                }
+            }
+            
             Outcome::JoinedGame(GameState {})
         },
         Err(_) => 
@@ -614,7 +630,7 @@ pub struct GameDirectoryEntry
 pub struct NewPlayer
 {
     pub player_id: Uuid,
-    pub player_receiver: Receiver<GameUpdates>
+    pub player_receiver: Receiver<WhatChanged>
 }
 
 pub struct GameState
@@ -624,7 +640,19 @@ pub struct GameState
 
 pub struct GameUpdates
 {
+    
+}
 
+pub enum WhatChanged
+{
+    NewPlayer(String),
+    TurnAdvanced,
+    PassAdvanced,
+    RoundAdvanced,
+    CombatStarted,
+    UpNext,
+    YourTurn,
+    CombatEnded
 }
 
 #[derive(PartialEq)]

@@ -5,14 +5,14 @@ use uuid::Uuid;
 
 use crate::tracker::game::Game;
 
-use super::GameUpdates;
+use super::{GameUpdates, WhatChanged};
 
 pub struct PlayerDirectoryEntry
 {
     pub player_id: Uuid,
     pub player_games: HashSet<Uuid>,
     pub player_characters: HashSet<Uuid>,
-    pub player_sender: Sender<GameUpdates>
+    pub player_sender: Sender<WhatChanged>
 }
 
 pub struct GameDirectoryEntry
@@ -53,7 +53,7 @@ impl <'a> GameRegistry
         }
     }
 
-    pub fn register_player(&mut self, player_id: Uuid, player_comm_channel: Sender<GameUpdates>) -> Result<(), ()>
+    pub fn register_player(&mut self, player_id: Uuid, player_comm_channel: Sender<WhatChanged>) -> Result<(), ()>
     {
         match self.players.entry(player_id)
         {
@@ -84,18 +84,15 @@ impl <'a> GameRegistry
         }
     }
 
-    pub fn get_player_sender(&mut self, player_id: Uuid) -> Option<Sender<GameUpdates>>
+    pub fn get_player_sender(&self, player_id: Uuid) -> Option<Sender<WhatChanged>>
     {
-        match self.players.entry(player_id)
+        if let Some(players) = self.players.get(&player_id)
         {
-            MapEntry::Occupied(player_dir) => 
-            {
-                Some(player_dir.get().player_sender.clone())
-            },
-            MapEntry::Vacant(_) => 
-            {
-                None
-            },
+            Some(players.player_sender.clone())
+        }
+        else
+        {
+            None
         }
     }
 
@@ -121,7 +118,7 @@ impl <'a> GameRegistry
         }
     }
 
-    pub fn players_by_game(&mut self, game_id: Uuid) -> Option<&HashSet<Uuid>>
+    pub fn players_by_game(&self, game_id: Uuid) -> Option<&HashSet<Uuid>>
     {
         if self.games.contains_key(&game_id)
         {
@@ -237,7 +234,7 @@ pub mod tests
     use tokio::sync::mpsc::channel;
     use uuid::Uuid;
 
-    use crate::{tracker::game::Game, gamerunner::GameUpdates};
+    use crate::tracker::game::Game;
 
     use super::GameRegistry;
 
@@ -337,7 +334,7 @@ pub mod tests
 
         let player_comms = registry.get_player_sender(player_id).unwrap();
         
-        player_comms.send(GameUpdates{}).await;
+        player_comms.send(crate::gamerunner::WhatChanged::NewPlayer(String::from("Timmy"))).await;
 
         assert!(receiver.recv().await.is_some());
     }
