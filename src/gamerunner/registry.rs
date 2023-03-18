@@ -156,12 +156,20 @@ impl <'a> GameRegistry
 
     pub fn enumerate_games(&self) -> HashSet<Uuid>
     {
+        let mut result = HashSet::new();
 
+        self.games.keys().for_each(|f| {result.insert(*f);});
+
+        return result;
     }
 
     pub fn enumerate_players(&self) -> HashSet<Uuid>
     {
+        let mut result = HashSet::new();
 
+        self.players.keys().for_each(|f|{result.insert(*f);});
+
+        return result;
     }
 
     pub fn delete_game(&mut self, game_id: Uuid) -> Result<(), ()>
@@ -191,7 +199,33 @@ impl <'a> GameRegistry
 
     pub fn unregister_player(&mut self, player_id: Uuid) -> Result<(), ()>
     {
+        if let Some(player) = self.players.remove(&player_id)
+        {
+            let mut game_ids = player.player_games;
 
+            for game_id in game_ids.drain()
+            {
+                match self.games.entry(game_id)
+                {
+                    MapEntry::Occupied(mut game_entry) => 
+                    {
+                        game_entry.get_mut().players.remove(&player_id);
+                    },
+                    MapEntry::Vacant(_) => {}
+                }
+            }
+
+            Ok(())
+        }
+        else 
+        {
+            Err(())
+        }
+    }
+
+    pub fn is_registered(&self, player_id: Uuid) -> bool
+    {
+        self.players.contains_key(&player_id)
     }
 }
 
@@ -290,7 +324,7 @@ pub mod tests
     }
 
     #[tokio::test]
-    pub async fn a_players_sending_channel_endpoint_may_be_retrieved_with_the_player_id()
+    pub async fn a_players_sending_channel_may_be_retrieved_with_the_player_id()
     {
         let mut registry = GameRegistry::new();
         let player_id = Uuid::new_v4();
@@ -339,9 +373,45 @@ pub mod tests
     }
 
     #[test]
+    pub fn a_full_list_of_games_may_be_retrieved_with_enumerate_games()
+    {
+        init();
+
+        let mut registry = GameRegistry::new();
+
+        let game_1 = Uuid::new_v4();
+        let game_2 = Uuid::new_v4();
+        let game_3 = Uuid::new_v4();
+
+        registry.new_game(game_1, Game::new());
+        registry.new_game(game_2, Game::new());
+        registry.new_game(game_3, Game::new());
+
+        let games = registry.enumerate_games();
+
+        assert_eq!(3, games.len());
+        assert!(games.contains(&game_1));
+        assert!(games.contains(&game_2));
+        assert!(games.contains(&game_3));
+    }
+
+    #[test]
+    pub fn if_no_games_have_been_created_then_enumerate_games_returns_an_empty_set()
+    {
+        init();
+
+        let mut registry = GameRegistry::new();
+
+        let games = registry.enumerate_games();
+
+        assert_eq!(0, games.len());
+    }
+
+    #[test]
     pub fn a_full_list_of_registered_players_may_be_retrieved_with_enumerate_player()
     {
-        let registry = GameRegistry::new();
+        init();
+        let mut registry = GameRegistry::new();
         let player_1 = Uuid::new_v4();
         let (sender_1, _) = channel(32);
         let player_2 = Uuid::new_v4();
@@ -355,6 +425,17 @@ pub mod tests
         assert!(registered_players.len() == 2);
         assert!(registered_players.contains(&player_1));
         assert!(registered_players.contains(&player_2));
+    }
+
+    #[test]
+    pub fn if_no_players_have_registered_enumerate_players_returns_an_empty_set()
+    {
+        init();
+        let mut registry = GameRegistry::new();
+
+        let registered_players = registry.enumerate_players();
+
+        assert_eq!(0, registered_players.len());
     }
 
     #[test]
@@ -372,6 +453,23 @@ pub mod tests
 
         assert!(registry.games_by_player(Uuid::new_v4()).is_none());
 
+    }
+
+    #[test]
+    pub fn if_a_player_is_not_in_any_games_then_games_by_player_will_return_an_empty_set()
+    {
+        init();
+        let mut registry = GameRegistry::new();
+        let game_1 = Uuid::new_v4();
+        registry.new_game(game_1, Game::new());
+
+        let player_1 = Uuid::new_v4();
+        let (mut sender, _) = channel(32);
+        registry.register_player(player_1, sender);
+
+        let game = registry.games_by_player(player_1).unwrap();
+
+        assert_eq!(0, game.len());
     }
 
     #[test]
@@ -557,6 +655,85 @@ pub mod tests
         let players = registry.players_by_game(game_2);
         assert!(players.is_some());
         assert!(players.unwrap().len() == 0);
+    }
+
+    #[test]
+    pub fn when_an_unrecognized_player_id_is_handed_to_unregister_Err_is_returned()
+    {
+        init();
+
+        let mut registry = GameRegistry::new();
+
+        let player_1 = Uuid::new_v4();
+        let (sender_1, _) = channel(32);
+        let player_2 = Uuid::new_v4();
+        let (sender_2, _) = channel(32);
+
+        let game_1 = Uuid::new_v4();
+        let game_2 = Uuid::new_v4();
+
+        registry.new_game(game_1, Game::new());
+        registry.new_game(game_2, Game::new());
+        registry.register_player(player_1, sender_1);
+        registry.register_player(player_2, sender_2);
+
+        let result = registry.unregister_player(Uuid::new_v4());
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    pub fn is_registered_will_return_true_if_a_given_id_is_registered_with_the_directory()
+    {
+        init();
+
+        let mut registry = GameRegistry::new();
+
+        let player_1 = Uuid::new_v4();
+        let (sender_1, _) = channel(32);
+
+        let game_1 = Uuid::new_v4();
+
+        registry.register_player(player_1, sender_1);
+        registry.new_game(game_1, Game::new());
+
+        registry.join_game(player_1, game_1);
+
+        assert!(registry.is_registered(player_1));
+    }
+
+    #[test]
+    pub fn is_registered_will_return_false_if_a_given_id_is_not_registered_with_the_directory()
+    {
+        init();
+
+        let mut registry = GameRegistry::new();
+
+        assert!(!registry.is_registered(Uuid::new_v4()));
+    }
+
+    #[test]
+    pub fn is_registered_returns_true_regardless_of_whether_a_player_has_joined_any_game()
+    {
+        init();
+
+        let mut registry = GameRegistry::new();
+
+        let player_1 = Uuid::new_v4();
+        let (sender_1, _) = channel(32);
+        let player_2 = Uuid::new_v4();
+        let (sender_2, _) = channel(32);
+
+        let game_1 = Uuid::new_v4();
+
+        registry.new_game(game_1, Game::new());
+        registry.register_player(player_1, sender_1);
+        registry.register_player(player_2, sender_2);
+
+        registry.join_game(player_1, game_1);
+
+        assert!(registry.is_registered(player_1));
+        assert!(registry.is_registered(player_2));
     }
 
 }
