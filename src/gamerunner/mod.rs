@@ -1,7 +1,8 @@
 use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use log::{debug, error};
-use tokio::sync::mpsc::{Receiver, Sender, channel};
+use tokio::sync::mpsc::{Receiver, Sender as MpscSender, channel};
+use tokio::sync::oneshot::Sender as OneShotSender;
 use uuid::Uuid;
 
 use crate::{tracker::{game::{Game, ActionType}, character::Character}, gamerunner::registry::GameRegistry};
@@ -9,6 +10,139 @@ use crate::{tracker::{game::{Game, ActionType}, character::Character}, gamerunne
 pub mod registry;
 
 pub async fn game_runner(mut message_queue: Receiver<Message>)
+{
+    debug!("Game runner redux started.");
+
+    let mut directory = GameRegistry::new();
+
+    while let Some(message) = message_queue.recv().await
+    {
+        let game_id = message.game_id;
+        let (channel, game_id, msg) = (message.reply_channel, message.game_id, message.msg);
+        let response = dispatch_message(&mut directory, game_id, msg);
+        notify_players(&mut directory, &response);
+
+        if channel.send(response).is_err()
+        {
+            error!("The return channel has dropped.");
+        }
+    }
+}
+
+fn dispatch_message(registry: &mut GameRegistry, game_id: GameId, msg: Event) -> Outcome
+{
+    
+    match msg
+    {
+        Event::NewPlayer => {
+            debug!("Request is to register as a player.");
+            register_player(registry)
+        },
+        Event::Enumerate => {
+            debug!("Request is for a list of running games.");
+            enumerate(registry)
+        }
+        Event::New => {
+            debug!("Request is for new game.");
+            new_game(registry)
+        },
+        Event::Delete => {
+            debug!("Request is to remove game.");
+            end_game(game_id, registry)
+        },
+        Event::JoinGame(player_id) => {
+            debug!("Request is to let a player join a game.");
+            join_game(player_id, game_id, registry)
+        
+        },
+        Event::AddCharacter(character) => {
+            debug!("Request is to add a new character.");
+            find_game_and_act(registry, game_id, | game | {add_character(character, game)}).0
+        },
+        Event::GetFullCast => {
+            debug!("Request is to get the full cast list.");
+            find_game_and_act(registry, game_id, get_full_cast).0
+        },
+        Event::GetNpcCast => {
+            debug!("Request is to get the NPC cast list.");
+            find_game_and_act(registry, game_id, get_npcs).0
+        },
+        Event::GetPcCast => {
+            debug!("Reqeust is to get the PC cast list.");
+            find_game_and_act(registry, game_id, get_pcs).0
+        }
+        Event::GetCharacter(id) => {
+            debug!("Request is to get a character by id.");
+            find_game_and_act(registry, game_id, |game| {get_char(id, game)}).0
+        }
+        Event::StartCombat(combatants) => {
+            debug!("Request is to start the combat phase.");                
+            find_game_and_act(registry, game_id, | game | {start_combat(combatants.to_owned(), game)}).0
+        },
+        Event::AddInitiativeRoll(roll) => {
+            debug!("Request is to add an initiative roll.");
+            find_game_and_act(registry, game_id, | game | { add_init_roll(roll, game)}).0
+        },
+        Event::BeginInitiativePhase => {
+            debug!("Request is to begin the initiative phase.");
+            find_game_and_act(registry, game_id, try_initiative_phase).0
+        },
+        Event::StartCombatRound => {
+            debug!("Request is to begin a combat round.");
+            find_game_and_act( registry, game_id, try_begin_combat).0
+        },
+        Event::TakeAction(action) =>
+        {
+            debug!("Request is for some character to perform some action.");
+            find_game_and_act( registry, game_id, | game | {take_action(game, action)}).0
+        }
+        Event::AdvanceTurn => {
+            debug!("Request is to advance to the next event in the pass.");
+            find_game_and_act( registry, game_id, try_advance_turn).0
+        }
+        Event::WhoGoesThisTurn => {
+            debug!("Request is to see who is going this turn.");
+            find_game_and_act(registry, game_id, list_current_turn_events).0
+        }
+        Event::WhatHasYetToHappenThisTurn => {
+            debug!("Request is to see who has yet to go.");
+            find_game_and_act(registry, game_id, list_unresolved_events).0
+        }
+        Event::WhatHappensNextTurn => {
+            debug!("Request is to see what happens next turn.");
+            find_game_and_act(registry, game_id, list_next_turn_events).0
+        }
+        Event::AllEventsThisPass => {
+            debug!("Request is for a full accounting of all events on this pass.");
+            find_game_and_act(registry, game_id, list_all_events_by_id_this_pass).0
+        }
+        Event::NextInitiative => {
+            debug!("Request is to get the next initiative number.");
+            find_game_and_act(registry, game_id, next_initiative).0
+        }
+        Event::CurrentInitiative => {
+            debug!("Request is to get the current initiative number.");
+            find_game_and_act(registry, game_id, current_initiative).0
+        }
+        Event::AllRemainingInitiatives => {
+            debug!("Request is to get any initiatives that have not been fully resolved.");
+            find_game_and_act(registry, game_id, remaining_initiatives_are).0
+        }
+        _ => {todo!()}
+    }
+}
+
+fn notify_players(registry: &mut GameRegistry, of_outcome: &Outcome)
+{
+    match of_outcome 
+    {
+        Outcome::Destroyed(_) => {}
+        Outcome::Error(_) => {}
+        _ => {todo!()}
+    }
+}
+
+pub async fn game_runner_old(mut message_queue: Receiver<Message>)
 {
 
     // set up whatever we're going to use to store running games.  For now, a simple HashMap will do.
@@ -18,7 +152,7 @@ pub async fn game_runner(mut message_queue: Receiver<Message>)
     while let Some(message) = message_queue.recv().await
     {
         debug!("Received request.  processing...");
-        let channel: tokio::sync::oneshot::Sender<Outcome> = message.reply_channel;
+        let channel: OneShotSender<Outcome> = message.reply_channel;
         let game_id = message.game_id;
         let response = match message.msg {
             Event::NewPlayer => {
@@ -36,90 +170,84 @@ pub async fn game_runner(mut message_queue: Receiver<Message>)
             Event::Delete => {
                 debug!("Request is to remove game.");
                 end_game(game_id, &mut directory)
-            }
-            Event::JoinGame((player_id, game_id)) => {
+            },
+            Event::JoinGame(player_id) => {
                 debug!("Request is to let a player join a game.");
-                if is_registered_player(player_id, &directory)
-                {
-                    join_game(player_id, game_id, &mut directory)
-                }
-                else
-                {
-                    Outcome::Error(Error { message: String::from(format!("The player id {} is not a registered player.", player_id)), kind: ErrorKind::UnknownPlayerId })
-                }
-            }
+                join_game(player_id, game_id, &mut directory)
+            
+            },
             Event::AddCharacter(character) => {
                 debug!("Request is to add a new character.");
-                find_game_and_act(&mut directory, game_id, | game | {add_character(character, game)})
+                find_game_and_act(&mut directory, game_id, | game | {add_character(character, game)}).0
             },
             Event::GetFullCast => {
                 debug!("Request is to get the full cast list.");
-                find_game_and_act(&mut directory, game_id, get_full_cast)
+                find_game_and_act(&mut directory, game_id, get_full_cast).0
             },
             Event::GetNpcCast => {
                 debug!("Request is to get the NPC cast list.");
-                find_game_and_act(&mut directory, game_id, get_npcs)
+                find_game_and_act(&mut directory, game_id, get_npcs).0
             },
             Event::GetPcCast => {
                 debug!("Reqeust is to get the PC cast list.");
-                find_game_and_act(&mut directory, game_id, get_pcs)
+                find_game_and_act(&mut directory, game_id, get_pcs).0
             }
             Event::GetCharacter(id) => {
                 debug!("Request is to get a character by id.");
-                find_game_and_act(&mut directory, game_id, |game| {get_char(id, game)})
+                find_game_and_act(&mut directory, game_id, |game| {get_char(id, game)}).0
             }
             Event::StartCombat(combatants) => {
                 debug!("Request is to start the combat phase.");                
-                find_game_and_act(&mut directory, game_id, | game | {start_combat(combatants, game)})
+                find_game_and_act(&mut directory, game_id, | game | {start_combat(combatants, game)}).0
             },
             Event::AddInitiativeRoll(roll) => {
                 debug!("Request is to add an initiative roll.");
-                find_game_and_act(&mut directory, game_id, | game | { add_init_roll(roll, game)})
+                find_game_and_act(&mut directory, game_id, | game | { add_init_roll(roll, game)}).0
             },
             Event::BeginInitiativePhase => {
                 debug!("Request is to begin the initiative phase.");
-                find_game_and_act(&mut directory, game_id, try_initiative_phase)
+                find_game_and_act(&mut directory, game_id, try_initiative_phase).0
             },
             Event::StartCombatRound => {
                 debug!("Request is to begin a combat round.");
-                find_game_and_act(&mut directory, game_id, try_begin_combat)
+                find_game_and_act(&mut directory, game_id, try_begin_combat).0
             },
             Event::TakeAction(action) =>
             {
                 debug!("Request is for some character to perform some action.");
-                find_game_and_act(&mut directory, game_id, | game | {take_action(game, action)})
+                find_game_and_act(&mut directory, game_id, | game | {take_action(game, action)}).0
             }
             Event::AdvanceTurn => {
                 debug!("Request is to advance to the next event in the pass.");
-                find_game_and_act(&mut directory, game_id, try_advance_turn)
+                find_game_and_act(&mut directory, game_id, try_advance_turn).0
             }
             Event::WhoGoesThisTurn => {
                 debug!("Request is to see who is going this turn.");
-                find_game_and_act(&mut directory, game_id, list_current_turn_events)
+                find_game_and_act(&mut directory, game_id, list_current_turn_events).0
             }
             Event::WhatHasYetToHappenThisTurn => {
                 debug!("Request is to see who has yet to go.");
-                find_game_and_act(&mut directory, game_id, list_unresolved_events)
+                find_game_and_act(&mut directory, game_id, list_unresolved_events).0
             }
             Event::WhatHappensNextTurn => {
                 debug!("Request is to see what happens next turn.");
-                find_game_and_act(&mut directory, game_id, list_next_turn_events)
+                find_game_and_act(&mut directory, game_id, list_next_turn_events).0
             }
             Event::AllEventsThisPass => {
                 debug!("Request is for a full accounting of all events on this pass.");
-                find_game_and_act(&mut directory, game_id, list_all_events_by_id_this_pass)
+                find_game_and_act(&mut directory, game_id, list_all_events_by_id_this_pass).0
             }
             Event::NextInitiative => {
                 debug!("Request is to get the next initiative number.");
-                find_game_and_act(&mut directory, game_id, next_initiative)
+                find_game_and_act(&mut directory, game_id, next_initiative).0
             }
             Event::CurrentInitiative => {
                 debug!("Request is to get the current initiative number.");
-                find_game_and_act(&mut directory, game_id, current_initiative)
+                find_game_and_act(&mut directory, game_id, current_initiative).0
             }
             Event::AllRemainingInitiatives => {
                 debug!("Request is to get any initiatives that have not been fully resolved.");
-                find_game_and_act(&mut directory, game_id, remaining_initiatives_are)
+                find_game_and_act(&mut directory, game_id, remaining_initiatives_are).0
             }
             _ => { todo!()}
         };
@@ -163,7 +291,7 @@ fn end_game(game: Uuid, directory: &mut GameRegistry) -> Outcome
 
     match directory.delete_game(game)
     {
-        Ok(_) => {response = Outcome::Destroyed},
+        Ok(_) => {response = Outcome::Destroyed(Vec::new())},
         Err(_) => {response = Outcome::Error(
             Error{ message: String::from(format!("No game by ID {} exists.", game.clone())), kind: ErrorKind::NoMatchingGame })},
     }
@@ -202,12 +330,12 @@ fn join_game(player_id: Uuid, game_id: Uuid, game_directory: &mut GameRegistry) 
     {
         Ok(_) => 
         {
-            let potential_players = game_directory.players_by_game(game_id);
-            if potential_players.is_some()
+            // let potential_players = game_directory.players_by_game(game_id);
+            if let Some(potential_players) = game_directory.players_by_game(game_id)
             {
-                for player in potential_players.unwrap()
+                for player in potential_players
                 {
-                    game_directory.get_player_sender(*player);
+                    game_directory.get_player_sender(player);
                 }
             }
             
@@ -474,24 +602,34 @@ fn remaining_initiatives_are(game: &mut Game) -> Outcome
     Outcome::InitiativesAre(game.get_all_remaining_initiatives())
 }
 
-fn find_game_and_act<F>(running_games: &mut GameRegistry, game_id: Uuid, action: F) -> Outcome
+fn find_game_and_act<F>(running_games: &mut GameRegistry, game_id: Uuid, action: F) -> (Outcome, Vec<MpscSender<WhatChanged>>)
 where
     F: FnOnce(&mut Game) -> Outcome
 {
     let response: Outcome;
+    let mut send_to = Vec::<MpscSender<WhatChanged>>::new();
 
+    if let Some(player_id_list) = running_games.players_by_game(game_id)
+    {
+        for player_id in player_id_list
+        {
+            if let Some(player_sender) = running_games.get_player_sender(player_id)
+            {
+                send_to.push(player_sender);
+            }
+        }
+    }
 
     match running_games.get_mut_game(game_id)
     {
         Some(mut game) => 
         {
-            
             response = action(&mut game);
         },
         None => {response = game_not_found(game_id)},
     }
 
-    return response;
+    return (response, send_to);
 }
 
 fn game_not_found(id: Uuid) -> Outcome
@@ -509,17 +647,19 @@ fn game_not_found(id: Uuid) -> Outcome
 pub struct Message
 {
     pub game_id: Uuid,
-    pub reply_channel: tokio::sync::oneshot::Sender<Outcome>,
+    pub reply_channel: OneShotSender<Outcome>,
     pub msg: Event,
 }
 
+type PlayerId = Uuid;
+type GameId = Uuid;
 pub enum Event
 {
     Enumerate,
     New,
     Delete,
     NewPlayer,
-    JoinGame((Uuid, Uuid)),
+    JoinGame(PlayerId),
     AddCharacter(Character),
     GetFullCast,
     GetNpcCast,
@@ -555,7 +695,7 @@ pub enum Outcome
     Created(Uuid),
     CastList(Vec<Arc<Character>>),
     Found(Option<Arc<Character>>),
-    Destroyed,
+    Destroyed(Vec<Uuid>),
     Error(Error),
     CharacterAdded(Uuid),
     CombatStarted,
@@ -590,7 +730,7 @@ pub struct InitiativeState
 
 pub struct AddCharacter
 {
-    pub reply_channel: tokio::sync::oneshot::Sender<Outcome>,
+    pub reply_channel: OneShotSender<Outcome>,
     pub game_id: Uuid,
     pub character: Character,
 }
@@ -618,7 +758,7 @@ pub struct PlayerDirectoryEntry
     pub player_id: Uuid,
     pub player_games: HashSet<Uuid>,
     pub player_characters: HashSet<Uuid>,
-    pub player_sender: Sender<GameUpdates>
+    pub player_sender: MpscSender<GameUpdates>
 }
 
 pub struct GameDirectoryEntry
@@ -652,7 +792,8 @@ pub enum WhatChanged
     CombatStarted,
     UpNext,
     YourTurn,
-    CombatEnded
+    CombatEnded,
+    GameEnded,
 }
 
 #[derive(PartialEq)]
@@ -688,6 +829,7 @@ mod tests
     use crate::tracker::character::Character;
     use crate::tracker::character::Metatypes;
     use crate::tracker::game::ActionType;
+    use crate::gamerunner::WhatChanged;
 
     use super::ErrorKind;
     use super::Message;
@@ -793,7 +935,7 @@ mod tests
         let player_state = player_join_game(&game_input_channel, game_id).await;
 
         let (game_sender, game_receiver) = channel();
-        let msg = Message {game_id, reply_channel: game_sender, msg: Event::JoinGame((player_state.player_id, game_id))};
+        let msg = Message {game_id, reply_channel: game_sender, msg: Event::JoinGame(player_state.player_id)};
 
         if let Err(_) = game_input_channel.send(msg).await 
         {
@@ -815,12 +957,6 @@ mod tests
             }
             Err(_) => panic!("The GameRunner should have returned a current GameState object along with my update messaging channel.")
         }
-    }
-
-    #[tokio::test]
-    pub async fn if_a_player_joins_a_second_game_they_will_not_receive_a_new_update_message_channel()
-    {
-
     }
 
 
@@ -985,11 +1121,75 @@ mod tests
 
         match response.unwrap()
         {
-            Outcome::Destroyed => {/* This is good, nothing to do. */},
+            Outcome::Destroyed(_) => {/* This is good, nothing to do. */},
             Outcome::Error(err) => {panic!("Received an error: {}", err.message);}
             _ => {panic!("Received ResponseMessage that should not have been generated by request.");}
         }
     }
+
+    #[tokio::test]
+    pub async fn when_a_game_is_deleted_it_will_notify_all_current_players_of_the_event()
+    {
+        let game_input_channel = init();
+
+        let (mut game_sender, mut game_receiver) = channel::<Outcome>();
+
+        let game_id = add_new_game(&game_input_channel).await;
+
+        let mut msg = Message {game_id, reply_channel: game_sender, msg: Event::NewPlayer};
+        let mut send_state = game_input_channel.send(msg).await;
+        assert!(send_state.is_ok());
+        let (melf_id, mut melf_notifications) = match game_receiver.await.unwrap()
+        {
+            Outcome::NewPlayer(player_struct) => (player_struct.player_id, player_struct.player_receiver),
+            _ => {panic!("These match arms should not have been invoked.")}
+        };
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+        msg = Message {game_id, reply_channel: game_sender, msg: Event::NewPlayer};
+        send_state = game_input_channel.send(msg).await;
+        assert!(send_state.is_ok());
+        let (mork_id, mut mork_notifications) = match game_receiver.await.unwrap()
+        {
+            Outcome::NewPlayer(player_struct) => (player_struct.player_id, player_struct.player_receiver),
+            _ => {panic!("These match arms should not have been invoked.")}
+        };
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+        msg = Message {game_id, reply_channel: game_sender, msg: Event::JoinGame(mork_id)};
+        assert!(game_input_channel.send(msg).await.is_ok());
+        assert!(game_receiver.await.is_ok());
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+        msg = Message {game_id, reply_channel: game_sender, msg: Event::JoinGame(melf_id)};
+        assert!(game_input_channel.send(msg).await.is_ok());
+        assert!(game_receiver.await.is_ok());
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+
+        msg = Message {game_id, reply_channel: game_sender, msg: Event::Delete};
+        assert!(game_input_channel.send(msg).await.is_ok());
+        assert!(game_receiver.await.is_ok());
+
+        match mork_notifications.recv().await
+        {
+            Some(change_notice) =>  match change_notice {
+                WhatChanged::GameEnded => {},
+                _ => {panic!("Should have received game ended notification")}
+            },
+            None => { panic!("Should have produced a WhatChanged notification.")}
+        }
+
+        match melf_notifications.recv().await
+        {
+            Some(change_notice) =>  match change_notice {
+                WhatChanged::GameEnded => {},
+                _ => {panic!("Should have received game ended notification")}
+            },
+            None => { panic!("Should have produced a WhatChanged notification.")}
+        }
+    }
+
 
     #[tokio::test]
     pub async fn deleting_a_game_with_an_unknown_id_will_generate_no_matching_game()
@@ -1009,7 +1209,7 @@ mod tests
 
         match response.unwrap()
         {
-            Outcome::Destroyed => {panic!("The game deleted somehow - received a Destroyed message instead of an error.");},
+            Outcome::Destroyed(_) => {panic!("The game deleted somehow - received a Destroyed message instead of an error.");},
             Outcome::Error(err) => 
             {
                 assert!(err.kind == ErrorKind::NoMatchingGame);

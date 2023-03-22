@@ -84,7 +84,7 @@ impl <'a> GameRegistry
         }
     }
 
-    pub fn get_player_sender(&self, player_id: Uuid) -> Option<Sender<WhatChanged>>
+    pub fn get_player_sender(&self, player_id: &Uuid) -> Option<Sender<WhatChanged>>
     {
         if let Some(players) = self.players.get(&player_id)
         {
@@ -332,7 +332,7 @@ pub mod tests
         registry.new_game(game_id, game);
         registry.register_player(player_id, sender);
 
-        let player_comms = registry.get_player_sender(player_id).unwrap();
+        let player_comms = registry.get_player_sender(&player_id).unwrap();
         
         player_comms.send(crate::gamerunner::WhatChanged::NewPlayer(String::from("Timmy"))).await;
 
