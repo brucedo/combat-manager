@@ -23,7 +23,18 @@ pub async fn game_runner(mut message_queue: Receiver<Message>)
         let (channel, game_id, msg) = (message.reply_channel, message.game_id, message.msg);
         let (response, to_notify) = dispatch_message(&mut directory, game_id, msg);
 
-        notify_players(&mut directory, to_notify);
+        if let Some(notification) = into_notification(&response)
+        {
+            let maybe_players = directory.players_by_game(game_id);
+            if let Some(players) = maybe_players
+            {
+                let senders: Vec<MpscSender<WhatChanged>> = players.iter()
+                    .map(|f| directory.get_player_sender(f).clone())
+                    .filter(|o| o.is_some()).map(|o| o.unwrap()).collect();
+
+                notify_players(notification, &senders);
+            }
+        }
 
         if channel.send(response).is_err()
         {
@@ -135,21 +146,31 @@ fn dispatch_message(registry: &mut GameRegistry, game_id: GameId, msg: Event) ->
     }
 }
 
-fn notify_players(registry: &mut GameRegistry, notification_list: Option<NotifyList>)
+fn notify_players(notification: WhatChanged, notification_list: &Vec<MpscSender<WhatChanged>>)
 {
-    match notification_list 
+    
+    for sender in notification_list
     {
-        Some(list) => 
-        {
-            for player in list
-            {
-                if let Some(sender) = registry.get_player_sender(&player)
-                {
-                    sender.try_send(WhatChanged::GameEnded);
-                }
-            }
-        }, 
-        None => {}
+        sender.send(notification.clone());
+    }
+}
+
+fn into_notification(outcome: &Outcome) -> Option<WhatChanged>
+{
+    match outcome {
+        Outcome::NewPlayer(_) => Some(WhatChanged::NewPlayer(String::from(""))),
+        Outcome::JoinedGame(_) => Some(WhatChanged::NewPlayer(String::from(""))),
+        Outcome::Destroyed => Some(WhatChanged::GameEnded),
+        Outcome::CharacterAdded(_) => Some(WhatChanged::NewCharacter),
+        Outcome::CombatStarted => Some(WhatChanged::CombatStarted),
+        Outcome::InitiativePhaseStarted => Some(WhatChanged::StartingInitiativePhase),
+        Outcome::InitiativeRollAdded => None,
+        Outcome::InitiativeStatus(_) => None,
+        Outcome::CombatRoundStarted => Some(WhatChanged::StartingCombatRound),
+        Outcome::ActionTaken => Some(WhatChanged::PlayerActed),
+        Outcome::TurnAdvanced => Some(WhatChanged::TurnAdvanced),
+        Outcome::CombatEnded => Some(WhatChanged::CombatEnded),
+        _ => None
     }
 }
 
@@ -806,9 +827,14 @@ pub struct GameUpdates
     
 }
 
+#[derive(Clone)]
 pub enum WhatChanged
 {
     NewPlayer(String),
+    NewCharacter,
+    StartingInitiativePhase,
+    StartingCombatRound,
+    PlayerActed,
     TurnAdvanced,
     PassAdvanced,
     RoundAdvanced,
