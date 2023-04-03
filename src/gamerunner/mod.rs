@@ -9,8 +9,6 @@ use crate::{tracker::{game::{Game, ActionType}, character::Character}, gamerunne
 
 pub mod registry;
 
-type NotifyList = Vec<Uuid>;
-
 pub async fn game_runner(mut message_queue: Receiver<Message>)
 {
     debug!("Game runner redux started.");
@@ -19,9 +17,13 @@ pub async fn game_runner(mut message_queue: Receiver<Message>)
 
     while let Some(message) = message_queue.recv().await
     {
-        let game_id = message.game_id;
         let (channel, game_id, msg) = (message.reply_channel, message.game_id, message.msg);
-        let (response, to_notify) = dispatch_message(&mut directory, game_id, msg);
+        let (response, mut to_notify) = dispatch_message(&mut directory, game_id, msg);
+
+        if to_notify.is_none()
+        {
+            to_notify = directory.players_by_game(game_id);
+        }
 
         if let Some(notification) = into_notification(&response)
         {
@@ -32,7 +34,7 @@ pub async fn game_runner(mut message_queue: Receiver<Message>)
                     .map(|f| directory.get_player_sender(f).clone())
                     .filter(|o| o.is_some()).map(|o| o.unwrap()).collect();
 
-                notify_players(notification, &senders);
+                notify_players(notification, &senders).await;
             }
         }
 
@@ -43,7 +45,7 @@ pub async fn game_runner(mut message_queue: Receiver<Message>)
     }
 }
 
-fn dispatch_message(registry: &mut GameRegistry, game_id: GameId, msg: Event) -> (Outcome, Option<Vec<Uuid>>)
+fn dispatch_message(registry: &mut GameRegistry, game_id: GameId, msg: Event) -> (Outcome, Option<&HashSet<Uuid>>)
 {
     
     match msg
@@ -67,7 +69,6 @@ fn dispatch_message(registry: &mut GameRegistry, game_id: GameId, msg: Event) ->
         Event::JoinGame(player_id) => {
             debug!("Request is to let a player join a game.");
             join_game(player_id, game_id, registry)
-        
         },
         Event::AddCharacter(character) => {
             debug!("Request is to add a new character.");
@@ -146,12 +147,12 @@ fn dispatch_message(registry: &mut GameRegistry, game_id: GameId, msg: Event) ->
     }
 }
 
-fn notify_players(notification: WhatChanged, notification_list: &Vec<MpscSender<WhatChanged>>)
+async fn notify_players(notification: WhatChanged, notification_list: &Vec<MpscSender<WhatChanged>>)
 {
     
     for sender in notification_list
     {
-        sender.send(notification.clone());
+        sender.send(notification.clone()).await;
     }
 }
 
@@ -317,28 +318,22 @@ fn new_game(running_games: &mut GameRegistry) -> Outcome
     return response;
 }
 
-fn end_game(game: Uuid, directory: &mut GameRegistry) -> (Outcome, Option<NotifyList>)
+fn end_game(game: Uuid, directory: &mut GameRegistry) -> (Outcome, Option<&HashSet<Uuid>>)
 {
-    let response: Outcome;
-    let mut to_notify: Option<Vec<Uuid>> = None;
-    let mut affected_players = Vec::new();
-    if let Some(players) = directory.players_by_game(game)
-    {
-        for player in players
-        {
-            affected_players.push(*player);
-        }
-        to_notify = Some(affected_players);
-    }
 
     match directory.delete_game(game)
     {
-        Ok(_) => {response = Outcome::Destroyed},
-        Err(_) => {response = Outcome::Error(
-            Error{ message: String::from(format!("No game by ID {} exists.", game.clone())), kind: ErrorKind::NoMatchingGame })},
+        Ok(_) => 
+        {
+            let to_notify = directory.players_by_game(game);
+            (Outcome::Destroyed, to_notify)
+        },
+        Err(_) => 
+        {
+            (Outcome::Error(
+            Error{ message: String::from(format!("No game by ID {} exists.", game.clone())), kind: ErrorKind::NoMatchingGame }), None)
+        },
     }
-
-    return (response, to_notify);
 }
 
 fn register_player(player_directory: &mut GameRegistry) -> Outcome
@@ -350,7 +345,7 @@ fn register_player(player_directory: &mut GameRegistry) -> Outcome
         player_id = Uuid::new_v4();
     }
     let (player_sender, player_receiver) = channel(32);
-    let player_info = NewPlayer{ player_id, player_receiver };   
+    let player_info = NewPlayer{ player_id, player_1_receiver: player_receiver };   
 
     match player_directory.register_player(player_id, player_sender)
     {
@@ -366,29 +361,19 @@ fn is_registered_player(player_id: Uuid, player_directory: &GameRegistry) -> boo
     player_directory.is_registered(player_id)
 }
 
-fn join_game(player_id: Uuid, game_id: Uuid, game_directory: &mut GameRegistry) -> (Outcome, Option<NotifyList>)
+fn join_game(player_id: Uuid, game_id: Uuid, game_directory: &mut GameRegistry) -> (Outcome, Option<&HashSet<PlayerId>>)
 {
-    let mut to_notify: Option<NotifyList> = None;
+
     match game_directory.join_game(player_id, game_id)
     {
         Ok(_) => 
-        {
-            // let potential_players = game_directory.players_by_game(game_id);
-            let mut affected_players = NotifyList::new();
-            if let Some(potential_players) = game_directory.players_by_game(game_id)
-            {
-                for player in potential_players
-                {
-                    affected_players.push(*player);
-                }
-                to_notify = Some(affected_players);
-            }
-            
+        {   
+            let to_notify = game_directory.players_by_game(game_id);
             (Outcome::JoinedGame(GameState {}), to_notify)
         },
         Err(_) => 
         {
-            (Outcome::Error(Error { message: String::from(format!("No matching game for id {}", game_id)), kind: ErrorKind::NoMatchingGame }), to_notify)
+            (Outcome::Error(Error { message: String::from(format!("No matching game for id {}", game_id)), kind: ErrorKind::NoMatchingGame }), None)
         },
     }
 }
@@ -647,22 +632,12 @@ fn remaining_initiatives_are(game: &mut Game) -> Outcome
     Outcome::InitiativesAre(game.get_all_remaining_initiatives())
 }
 
-fn find_game_and_act<F>(running_games: &mut GameRegistry, game_id: Uuid, action: F) -> (Outcome, Option<NotifyList>)
+fn find_game_and_act<F>(running_games: &mut GameRegistry, game_id: Uuid, action: F) -> (Outcome, Option<&HashSet<PlayerId>>)
 where
     F: FnOnce(&mut Game) -> Outcome
 {
     let response: Outcome;
-    let mut send_to: Option<Vec<Uuid>> = None;
-
-    if let Some(player_id_list) = running_games.players_by_game(game_id)
-    {
-        let mut temp = Vec::<Uuid>::new();
-        for player_id in player_id_list
-        {
-            temp.push(*player_id);
-        }
-        send_to = Some(temp);
-    }
+    // let mut send_to = running_games.players_by_game(game_id);
 
     match running_games.get_mut_game(game_id)
     {
@@ -673,7 +648,7 @@ where
         None => {response = game_not_found(game_id)},
     }
 
-    return (response, send_to);
+    return (response, None);
 }
 
 fn game_not_found(id: Uuid) -> Outcome
@@ -814,7 +789,7 @@ pub struct GameDirectoryEntry
 pub struct NewPlayer
 {
     pub player_id: Uuid,
-    pub player_receiver: Receiver<WhatChanged>
+    pub player_1_receiver: Receiver<WhatChanged>
 }
 
 pub struct GameState
@@ -866,6 +841,7 @@ mod tests
 
 
     use log::debug;
+    use rocket::futures::channel::mpsc::TryRecvError;
     use tokio::sync::oneshot::Receiver;
     use tokio::sync::oneshot::channel;
     use tokio::sync::mpsc::channel as mpsc_channel;
@@ -1011,10 +987,13 @@ mod tests
     #[tokio::test]
     pub async fn when_a_new_player_joins_a_game_existing_players_receive_a_notification()
     {
+        init();
+
         let game_input_channel = init();
         let game_id = add_new_game(&game_input_channel).await;
 
-        let NewPlayer {player_id: player_1_id, player_receiver: mut player_1_channel} = player_join_game(&game_input_channel, game_id).await;
+        let NewPlayer {player_id: player_1_id, player_1_receiver: mut player_1_channel} 
+            = player_join_game(&game_input_channel, game_id).await;
         let (mut game_sender, mut game_receiver) = channel();
         let mut msg = Message {game_id, reply_channel: game_sender, msg: Event::JoinGame(player_1_id)};
 
@@ -1223,7 +1202,7 @@ mod tests
         assert!(send_state.is_ok());
         let (melf_id, mut melf_notifications) = match game_receiver.await.unwrap()
         {
-            Outcome::NewPlayer(player_struct) => (player_struct.player_id, player_struct.player_receiver),
+            Outcome::NewPlayer(player_struct) => (player_struct.player_id, player_struct.player_1_receiver),
             _ => {panic!("These match arms should not have been invoked.")}
         };
 
@@ -1233,7 +1212,7 @@ mod tests
         assert!(send_state.is_ok());
         let (mork_id, mut mork_notifications) = match game_receiver.await.unwrap()
         {
-            Outcome::NewPlayer(player_struct) => (player_struct.player_id, player_struct.player_receiver),
+            Outcome::NewPlayer(player_struct) => (player_struct.player_id, player_struct.player_1_receiver),
             _ => {panic!("These match arms should not have been invoked.")}
         };
 
@@ -1253,23 +1232,75 @@ mod tests
         assert!(game_input_channel.send(msg).await.is_ok());
         assert!(game_receiver.await.is_ok());
 
-        match mork_notifications.recv().await
+        
+        loop
         {
-            Some(change_notice) =>  match change_notice {
-                WhatChanged::GameEnded => {},
-                _ => {panic!("Should have received game ended notification")}
-            },
-            None => { panic!("Should have produced a WhatChanged notification.")}
+            let change_option = mork_notifications.try_recv();
+            match change_option
+            {
+                Ok(change_notice) => 
+                {
+                    match change_notice
+                    {
+                        WhatChanged::GameEnded => {break;},
+                        _ => {}
+                    }
+                },
+                Err(err) =>
+                {
+                    match err
+                    {
+                        tokio::sync::mpsc::error::TryRecvError::Empty => 
+                        {
+                            panic!("Channel emptied out without ever giving up the GameEnded message");
+                        },
+                        tokio::sync::mpsc::error::TryRecvError::Disconnected => 
+                        {
+                            panic!("Channel closed without ever giving up the GameEnded message");
+                        },
+                    }
+                }
+            }
         }
 
-        match melf_notifications.recv().await
+        loop
         {
-            Some(change_notice) =>  match change_notice {
-                WhatChanged::GameEnded => {},
-                _ => {panic!("Should have received game ended notification")}
-            },
-            None => { panic!("Should have produced a WhatChanged notification.")}
+            let change_option = melf_notifications.try_recv();
+            match change_option
+            {
+                Ok(change_notice) =>
+                {
+                    match change_notice
+                    {
+                        WhatChanged::GameEnded => {break;},
+                        _ => {}
+                    }
+                },
+                Err(err) =>
+                {
+                    match err
+                    {
+                        tokio::sync::mpsc::error::TryRecvError::Empty => 
+                        {
+                            panic!("Melf channel emptied out wihtout ever giving up the GameEnded message");
+                        },
+                        tokio::sync::mpsc::error::TryRecvError::Disconnected =>
+                        {
+                            panic!("Melf channel closed without ever giving up the GameEnded message");
+                        }
+                    }
+                }
+            }
         }
+
+        // match melf_notifications.recv().await
+        // {
+        //     Some(change_notice) =>  match change_notice {
+        //         WhatChanged::GameEnded => {},
+        //         _ => {panic!("Should have received game ended notification")}
+        //     },
+        //     None => { panic!("Should have produced a WhatChanged notification.")}
+        // }
     }
 
 
