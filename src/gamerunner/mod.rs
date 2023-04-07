@@ -18,23 +18,25 @@ pub async fn game_runner(mut message_queue: Receiver<Message>)
     while let Some(message) = message_queue.recv().await
     {
         let (channel, game_id, msg) = (message.reply_channel, message.game_id, message.msg);
-        let (response, mut to_notify) = dispatch_message(&mut directory, game_id, msg);
-
-        if to_notify.is_none()
-        {
-            to_notify = directory.players_by_game(game_id);
-        }
+        let (response, to_notify) = dispatch_message(&mut directory, game_id, msg);
 
         if let Some(notification) = into_notification(&response)
         {
-            let maybe_players = directory.players_by_game(game_id);
-            if let Some(players) = maybe_players
+            if let Some(players) = to_notify
             {
                 let senders: Vec<MpscSender<WhatChanged>> = players.iter()
                     .map(|f| directory.get_player_sender(f).clone())
                     .filter(|o| o.is_some()).map(|o| o.unwrap()).collect();
-
                 notify_players(notification, &senders).await;
+            }
+            else
+            {
+                if let Some(players) = directory.players_by_game(&game_id)
+                {
+                    let senders: Vec<MpscSender<WhatChanged>> = players.iter().map(|f| directory.get_player_sender(f).clone())
+                        .filter(|o| o.is_some()).map(|o| o.unwrap()).collect();
+                    notify_players(notification, &senders).await;
+                }
             }
         }
 
@@ -45,7 +47,7 @@ pub async fn game_runner(mut message_queue: Receiver<Message>)
     }
 }
 
-fn dispatch_message(registry: &mut GameRegistry, game_id: GameId, msg: Event) -> (Outcome, Option<&HashSet<Uuid>>)
+fn dispatch_message(registry: &mut GameRegistry, game_id: GameId, msg: Event) -> (Outcome, Option<HashSet<Uuid>>)
 {
     
     match msg
@@ -318,15 +320,16 @@ fn new_game(running_games: &mut GameRegistry) -> Outcome
     return response;
 }
 
-fn end_game(game: Uuid, directory: &mut GameRegistry) -> (Outcome, Option<&HashSet<Uuid>>)
+fn end_game(game: Uuid, directory: &mut GameRegistry) -> (Outcome, Option<HashSet<Uuid>>)
 {
 
     match directory.delete_game(game)
     {
-        Ok(_) => 
+        Ok(game_entry) => 
         {
-            let to_notify = directory.players_by_game(game);
-            (Outcome::Destroyed, to_notify)
+            let to_notify = game_entry.players;
+            // let to_notify = directory.players_by_game(game);
+            (Outcome::Destroyed, Some(to_notify))
         },
         Err(_) => 
         {
@@ -361,15 +364,15 @@ fn is_registered_player(player_id: Uuid, player_directory: &GameRegistry) -> boo
     player_directory.is_registered(player_id)
 }
 
-fn join_game(player_id: Uuid, game_id: Uuid, game_directory: &mut GameRegistry) -> (Outcome, Option<&HashSet<PlayerId>>)
+fn join_game(player_id: Uuid, game_id: Uuid, game_directory: &mut GameRegistry) -> (Outcome, Option<HashSet<PlayerId>>)
 {
 
     match game_directory.join_game(player_id, game_id)
     {
         Ok(_) => 
         {   
-            let to_notify = game_directory.players_by_game(game_id);
-            (Outcome::JoinedGame(GameState {}), to_notify)
+            // let to_notify = game_directory.players_by_game(game_id);
+            (Outcome::JoinedGame(GameState {}), None)
         },
         Err(_) => 
         {
@@ -632,7 +635,7 @@ fn remaining_initiatives_are(game: &mut Game) -> Outcome
     Outcome::InitiativesAre(game.get_all_remaining_initiatives())
 }
 
-fn find_game_and_act<F>(running_games: &mut GameRegistry, game_id: Uuid, action: F) -> (Outcome, Option<&HashSet<PlayerId>>)
+fn find_game_and_act<F>(running_games: &mut GameRegistry, game_id: Uuid, action: F) -> (Outcome, Option<HashSet<PlayerId>>)
 where
     F: FnOnce(&mut Game) -> Outcome
 {

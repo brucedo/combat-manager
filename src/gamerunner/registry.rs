@@ -118,11 +118,11 @@ impl <'a> GameRegistry
         }
     }
 
-    pub fn players_by_game(&self, game_id: Uuid) -> Option<&HashSet<Uuid>>
+    pub fn players_by_game(&self, game_id: &Uuid) -> Option<&HashSet<Uuid>>
     {
-        if self.games.contains_key(&game_id)
+        if self.games.contains_key(game_id)
         {
-            Some(&self.games.get(&game_id).unwrap().players)
+            Some(&self.games.get(game_id).unwrap().players)
         }
         else
         {
@@ -169,15 +169,13 @@ impl <'a> GameRegistry
         return result;
     }
 
-    pub fn delete_game(&mut self, game_id: Uuid) -> Result<(), ()>
+    pub fn delete_game(&mut self, game_id: Uuid) -> Result<GameDirectoryEntry, ()>
     {
         if let Some(game) = self.games.remove(&game_id)
         {
-            let mut players = game.players;
-
-            for player in players.drain()
+            for player in game.players.iter()
             {
-                match self.players.entry(player)
+                match self.players.entry(*player)
                 {
                     MapEntry::Occupied(mut player_entry) => {
                         player_entry.get_mut().player_games.remove(&game_id);
@@ -186,7 +184,7 @@ impl <'a> GameRegistry
                 }
             }
 
-            Ok(())
+            Ok(game)
         }
         else
         {
@@ -492,7 +490,7 @@ pub mod tests
         registry.join_game(player_2, game_1);
         registry.join_game(player_3, game_1);
 
-        let players: &HashSet<Uuid> = registry.players_by_game(game_1).unwrap();
+        let players: &HashSet<Uuid> = registry.players_by_game(&game_1).unwrap();
 
         assert_eq!(3, players.len());
         assert!(players.contains(&player_1));
@@ -514,7 +512,7 @@ pub mod tests
         registry.new_game(game_1, Game::new());
         registry.register_player(player_1, sender_1);
         
-        let players = registry.players_by_game(game_1);
+        let players = registry.players_by_game(&game_1);
         assert!(players.is_some());
         assert!(players.unwrap().len() == 0);
     }
@@ -536,7 +534,7 @@ pub mod tests
 
         registry.join_game(player_1, game_1);
 
-        assert!(registry.players_by_game(Uuid::new_v4()).is_none());
+        assert!(registry.players_by_game(&Uuid::new_v4()).is_none());
     }
 
     #[test]
@@ -605,7 +603,7 @@ pub mod tests
 
         registry.delete_game(game_id);
 
-        assert!(registry.players_by_game(game_id).is_none());
+        assert!(registry.players_by_game(&game_id).is_none());
         assert!(!registry.player_in_game(player_1, game_id));
         assert!(!registry.player_in_game(player_2, game_id));
         assert!(!registry.player_in_game(player_3, game_id));
@@ -645,11 +643,11 @@ pub mod tests
 
         registry.unregister_player(player_1);
 
-        let players = registry.players_by_game(game_1);
+        let players = registry.players_by_game(&game_1);
         assert!(players.is_some() && players.unwrap().contains(&player_2));
         assert!(!players.unwrap().contains(&player_1));
 
-        let players = registry.players_by_game(game_2);
+        let players = registry.players_by_game(&game_2);
         assert!(players.is_some());
         assert!(players.unwrap().len() == 0);
     }
