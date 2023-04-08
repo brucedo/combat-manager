@@ -5,11 +5,15 @@ use uuid::Uuid;
 
 use crate::tracker::game::Game;
 
-use super::{GameUpdates, WhatChanged};
+use super::{WhatChanged};
+
+type PlayerId = Uuid;
+type GameId = Uuid;
 
 pub struct PlayerDirectoryEntry
 {
     pub player_id: Uuid,
+    pub player_name: String,
     pub player_games: HashSet<Uuid>,
     pub player_characters: HashSet<Uuid>,
     pub player_sender: Sender<WhatChanged>
@@ -60,7 +64,13 @@ impl <'a> GameRegistry
             MapEntry::Occupied(_) => Err(()),
             MapEntry::Vacant(vacant) => 
             {
-                vacant.insert(PlayerDirectoryEntry { player_id, player_games: HashSet::new(), player_characters: HashSet::new(), player_sender: player_comm_channel });
+                vacant.insert(PlayerDirectoryEntry 
+                {
+                    player_name: String::from(""),  
+                    player_id, player_games: HashSet::new(), 
+                    player_characters: HashSet::new(), 
+                    player_sender: player_comm_channel 
+                });
                 Ok(())
             },
         }
@@ -106,16 +116,18 @@ impl <'a> GameRegistry
         self.players.contains_key(&player_id) && self.players.get(&player_id).unwrap().player_games.contains(&game_id)
     }
 
-    pub fn games_by_player(&self, player_id: Uuid) -> Option<&HashSet<Uuid>>
+    pub fn games_by_player(&self, player_id: PlayerId) -> Option<&HashSet<Uuid>>
     {
-        if self.players.contains_key(&player_id)
-        {
-            Some(&self.players.get(&player_id).unwrap().player_games)
-        }
-        else
-        {
-            None
-        }
+        let player_entry = self.players.get(&player_id)?;
+
+        Some(&player_entry.player_games)
+    }
+
+    pub fn player_name(&self, player_id: &PlayerId) -> Option<&str>
+    {
+        let player_entry = self.players.get(player_id)?;
+
+        Some(player_entry.player_name.as_str())
     }
 
     pub fn players_by_game(&self, game_id: &Uuid) -> Option<&HashSet<Uuid>>
@@ -232,7 +244,7 @@ pub mod tests
     use tokio::sync::mpsc::channel;
     use uuid::Uuid;
 
-    use crate::tracker::game::Game;
+    use crate::{tracker::game::Game, gamerunner::WhatChanged};
 
     use super::GameRegistry;
 
@@ -284,7 +296,7 @@ pub mod tests
         let player_id = Uuid::new_v4();
         let (sender, _) = channel(32);
         
-        registry.register_player(player_id, sender.clone());
+        assert!(registry.register_player(player_id, sender.clone()).is_ok());
         assert!(registry.register_player(player_id, sender).is_err());
     }
 
@@ -299,7 +311,7 @@ pub mod tests
         let game = Game::new();
 
         registry.new_game(game_id, game);
-        registry.register_player(player_id, sender);
+        assert!(registry.register_player(player_id, sender).is_ok());
 
         assert!(registry.join_game(player_id, game_id).is_ok());
     }
@@ -328,11 +340,12 @@ pub mod tests
         let game = Game::new();
 
         registry.new_game(game_id, game);
-        registry.register_player(player_id, sender);
+        assert!(registry.register_player(player_id, sender).is_ok());
 
         let player_comms = registry.get_player_sender(&player_id).unwrap();
         
-        player_comms.send(crate::gamerunner::WhatChanged::NewPlayer(String::from("Timmy"))).await;
+        
+        player_comms.send(crate::gamerunner::WhatChanged::CombatEnded).await;
 
         assert!(receiver.recv().await.is_some());
     }

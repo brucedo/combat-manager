@@ -20,7 +20,7 @@ pub async fn game_runner(mut message_queue: Receiver<Message>)
         let (channel, game_id, msg) = (message.reply_channel, message.game_id, message.msg);
         let (response, to_notify) = dispatch_message(&mut directory, game_id, msg);
 
-        if let Some(notification) = into_notification(&response)
+        if let Some(notification) = into_notification(&directory,&response)
         {
             if let Some(players) = to_notify
             {
@@ -158,11 +158,15 @@ async fn notify_players(notification: WhatChanged, notification_list: &Vec<MpscS
     }
 }
 
-fn into_notification(outcome: &Outcome) -> Option<WhatChanged>
+fn into_notification(game_directory: &GameRegistry, outcome: &Outcome) -> Option<WhatChanged>
 {
     match outcome {
-        Outcome::NewPlayer(_) => Some(WhatChanged::NewPlayer(String::from(""))),
-        Outcome::JoinedGame(_) => Some(WhatChanged::NewPlayer(String::from(""))),
+        Outcome::NewPlayer(_) => None,
+        Outcome::JoinedGame(player_info) => 
+        {
+            let player_name: &str = game_directory.player_name(&player_info.for_player)?;
+            Some(WhatChanged::NewPlayer(Arc::new(PlayerJoined{ name: String::from(player_name), playerId: player_info.for_player })))
+        },
         Outcome::Destroyed => Some(WhatChanged::GameEnded),
         Outcome::CharacterAdded(_) => Some(WhatChanged::NewCharacter),
         Outcome::CombatStarted => Some(WhatChanged::CombatStarted),
@@ -174,123 +178,6 @@ fn into_notification(outcome: &Outcome) -> Option<WhatChanged>
         Outcome::TurnAdvanced => Some(WhatChanged::TurnAdvanced),
         Outcome::CombatEnded => Some(WhatChanged::CombatEnded),
         _ => None
-    }
-}
-
-pub async fn game_runner_old(mut message_queue: Receiver<Message>)
-{
-
-    // set up whatever we're going to use to store running games.  For now, a simple HashMap will do.
-    debug!("Game runner started.");
-    let mut directory = GameRegistry::new();
-
-    while let Some(message) = message_queue.recv().await
-    {
-        debug!("Received request.  processing...");
-        let channel: OneShotSender<Outcome> = message.reply_channel;
-        let game_id = message.game_id;
-        let response = match message.msg {
-            Event::NewPlayer => {
-                debug!("Request is to register as a player.");
-                register_player(&mut directory)
-            }
-            Event::Enumerate => {
-                debug!("Request is for a list of running games.");
-                enumerate(&mut directory)
-            }
-            Event::New => {
-                debug!("Request is for new game.");
-                new_game(&mut directory)
-            },
-            Event::Delete => {
-                debug!("Request is to remove game.");
-                end_game(game_id, &mut directory).0
-            },
-            Event::JoinGame(player_id) => {
-                debug!("Request is to let a player join a game.");
-                join_game(player_id, game_id, &mut directory).0
-            
-            },
-            Event::AddCharacter(character) => {
-                debug!("Request is to add a new character.");
-                find_game_and_act(&mut directory, game_id, | game | {add_character(character, game)}).0
-            },
-            Event::GetFullCast => {
-                debug!("Request is to get the full cast list.");
-                find_game_and_act(&mut directory, game_id, get_full_cast).0
-            },
-            Event::GetNpcCast => {
-                debug!("Request is to get the NPC cast list.");
-                find_game_and_act(&mut directory, game_id, get_npcs).0
-            },
-            Event::GetPcCast => {
-                debug!("Reqeust is to get the PC cast list.");
-                find_game_and_act(&mut directory, game_id, get_pcs).0
-            }
-            Event::GetCharacter(id) => {
-                debug!("Request is to get a character by id.");
-                find_game_and_act(&mut directory, game_id, |game| {get_char(id, game)}).0
-            }
-            Event::StartCombat(combatants) => {
-                debug!("Request is to start the combat phase.");                
-                find_game_and_act(&mut directory, game_id, | game | {start_combat(combatants, game)}).0
-            },
-            Event::AddInitiativeRoll(roll) => {
-                debug!("Request is to add an initiative roll.");
-                find_game_and_act(&mut directory, game_id, | game | { add_init_roll(roll, game)}).0
-            },
-            Event::BeginInitiativePhase => {
-                debug!("Request is to begin the initiative phase.");
-                find_game_and_act(&mut directory, game_id, try_initiative_phase).0
-            },
-            Event::StartCombatRound => {
-                debug!("Request is to begin a combat round.");
-                find_game_and_act(&mut directory, game_id, try_begin_combat).0
-            },
-            Event::TakeAction(action) =>
-            {
-                debug!("Request is for some character to perform some action.");
-                find_game_and_act(&mut directory, game_id, | game | {take_action(game, action)}).0
-            }
-            Event::AdvanceTurn => {
-                debug!("Request is to advance to the next event in the pass.");
-                find_game_and_act(&mut directory, game_id, try_advance_turn).0
-            }
-            Event::WhoGoesThisTurn => {
-                debug!("Request is to see who is going this turn.");
-                find_game_and_act(&mut directory, game_id, list_current_turn_events).0
-            }
-            Event::WhatHasYetToHappenThisTurn => {
-                debug!("Request is to see who has yet to go.");
-                find_game_and_act(&mut directory, game_id, list_unresolved_events).0
-            }
-            Event::WhatHappensNextTurn => {
-                debug!("Request is to see what happens next turn.");
-                find_game_and_act(&mut directory, game_id, list_next_turn_events).0
-            }
-            Event::AllEventsThisPass => {
-                debug!("Request is for a full accounting of all events on this pass.");
-                find_game_and_act(&mut directory, game_id, list_all_events_by_id_this_pass).0
-            }
-            Event::NextInitiative => {
-                debug!("Request is to get the next initiative number.");
-                find_game_and_act(&mut directory, game_id, next_initiative).0
-            }
-            Event::CurrentInitiative => {
-                debug!("Request is to get the current initiative number.");
-                find_game_and_act(&mut directory, game_id, current_initiative).0
-            }
-            Event::AllRemainingInitiatives => {
-                debug!("Request is to get any initiatives that have not been fully resolved.");
-                find_game_and_act(&mut directory, game_id, remaining_initiatives_are).0
-            }
-            _ => { todo!()}
-        };
-
-        if channel.send(response).is_err()
-        {
-            error!("The return channel has dropped.");
-        }
     }
 }
 
@@ -372,7 +259,7 @@ fn join_game(player_id: Uuid, game_id: Uuid, game_directory: &mut GameRegistry) 
         Ok(_) => 
         {   
             // let to_notify = game_directory.players_by_game(game_id);
-            (Outcome::JoinedGame(GameState {}), None)
+            (Outcome::JoinedGame(GameState {for_player: player_id}), None)
         },
         Err(_) => 
         {
@@ -750,13 +637,6 @@ pub struct InitiativeState
     pub remaining: Vec<Uuid>
 }
 
-pub struct AddCharacter
-{
-    pub reply_channel: OneShotSender<Outcome>,
-    pub game_id: Uuid,
-    pub character: Character,
-}
-
 pub struct Roll
 {
     pub character_id: Uuid,
@@ -775,20 +655,6 @@ pub struct TurnAdvanced
     pub on_deck: Vec<Uuid>,
 }
 
-pub struct PlayerDirectoryEntry
-{
-    pub player_id: Uuid,
-    pub player_games: HashSet<Uuid>,
-    pub player_characters: HashSet<Uuid>,
-    pub player_sender: MpscSender<GameUpdates>
-}
-
-pub struct GameDirectoryEntry
-{
-    pub game: Game,
-    pub players: Vec<Uuid>,
-}
-
 pub struct NewPlayer
 {
     pub player_id: Uuid,
@@ -797,18 +663,13 @@ pub struct NewPlayer
 
 pub struct GameState
 {
-
-}
-
-pub struct GameUpdates
-{
-    
+    for_player: Uuid,
 }
 
 #[derive(Clone)]
 pub enum WhatChanged
 {
-    NewPlayer(String),
+    NewPlayer(Arc<PlayerJoined>),
     NewCharacter,
     StartingInitiativePhase,
     StartingCombatRound,
@@ -821,6 +682,12 @@ pub enum WhatChanged
     YourTurn,
     CombatEnded,
     GameEnded,
+}
+
+pub struct PlayerJoined
+{
+    name: String,
+    playerId: Uuid,
 }
 
 #[derive(PartialEq)]
