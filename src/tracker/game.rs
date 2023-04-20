@@ -372,7 +372,7 @@ impl Game {
         return result;
     }
 
-    pub fn get_cast_by_id(self: &Game, char_id: Uuid) -> Option<Arc<Character>>
+    pub fn get_cast_by_id(self: &Game, char_id: &Uuid) -> Option<Arc<Character>>
     {
         if self.cast.contains_key(&char_id)
         {
@@ -1146,8 +1146,8 @@ mod tests
         let dorf_id = game.add_cast_member(dorf);
         let _melf_id = game.add_cast_member(melf);
 
-        assert!(game.get_cast_by_id(dorf_id).is_some());
-        let found_dorf = game.get_cast_by_id(dorf_id).unwrap();
+        assert!(game.get_cast_by_id(&dorf_id).is_some());
+        let found_dorf = game.get_cast_by_id(&dorf_id).unwrap();
         assert_eq!(dorf_id, found_dorf.id);
         
     }
@@ -1169,7 +1169,7 @@ mod tests
         let _dorf_id = game.add_cast_member(dorf);
         let _melf_id = game.add_cast_member(melf);
 
-        assert!(game.get_cast_by_id(Uuid::new_v4()).is_none());
+        assert!(game.get_cast_by_id(&Uuid::new_v4()).is_none());
     }
 
     #[test]

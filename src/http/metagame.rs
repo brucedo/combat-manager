@@ -6,7 +6,7 @@ use rocket::http::uri::Origin;
 use tokio::sync::mpsc::Sender;
 use uuid::Uuid;
 
-use crate::gamerunner::Message;
+use crate::gamerunner::dispatcher::Message;
 
 
 pub struct Metagame<'s>

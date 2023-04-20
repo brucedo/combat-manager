@@ -57,6 +57,13 @@ impl <'a> GameRegistry
         }
     }
 
+    pub fn get_game(&'a self, id: &Uuid) -> Option<&'a Game>
+    {
+        let entry = self.games.get(id)?;
+
+        Some(&entry.game)
+    }
+
     pub fn register_player(&mut self, player_id: Uuid, player_comm_channel: Sender<WhatChanged>) -> Result<(), ()>
     {
         match self.players.entry(player_id)
@@ -275,6 +282,32 @@ pub mod tests
         let id = Uuid::new_v4();
 
         assert!(registry.get_mut_game(id).is_none());
+    }
+
+    #[test]
+    pub fn if_a_registry_holds_a_valid_game_for_some_given_id_then_get_game_returns_a_borrow_wrapped_in_ok()
+    {
+        let mut registry = GameRegistry::new();
+
+        let game = Game::new();
+        let id = Uuid::new_v4();
+        
+        registry.new_game(id, game);
+
+        assert!(registry.get_game(&id).is_some() );
+    }
+    
+    #[test]
+    pub fn if_a_registry_does_not_hold_a_valid_game_for_some_given_id_then_get_game_returns_none()
+    {
+        let mut registry = GameRegistry::new();
+
+        let game = Game::new();
+        let id = Uuid::new_v4();
+
+        registry.new_game(id, game);
+
+        assert!(registry.get_game(&Uuid::new_v4()).is_none());
     }
 
     #[test]

@@ -5,7 +5,7 @@ use rocket_dyn_templates::{Template, context};
 use uuid::Uuid;
 use tokio::sync::{oneshot::channel, mpsc::Sender};
 
-use crate::{gamerunner::{Message, Event, Outcome}, http::{session::NewSessionOutcome, models::NewGame}, tracker::character::Character};
+use crate::{gamerunner::dispatcher::{Message, Request, Outcome}, http::{session::NewSessionOutcome, models::NewGame}, tracker::character::Character};
 
 use super::{models::{GameSummary, GMView, IndexModel, PlayerView, SimpleCharacterView, NewCharacter}, errors::Error, session::Session, metagame::Metagame};
 
@@ -33,7 +33,7 @@ pub async fn create_game(state: &State<Metagame<'_>>, session: Session, new_game
 {
     let my_sender = state.game_runner_pipe.clone();
 
-    let response = send_and_recv(Uuid::new_v4(), Event::New, my_sender).await?;
+    let response = send_and_recv(Uuid::new_v4(), Request::New, my_sender).await?;
 
     match response
     {
@@ -82,7 +82,7 @@ async fn build_player_view(game_id: Uuid, session: &Session, state: &State<Metag
 
     if session.has_character_for(game_id)
     {
-        match send_and_recv(game_id, Event::GetCharacter(session.character_id(game_id).unwrap()), state.game_runner_pipe.clone()).await?
+        match send_and_recv(game_id, Request::GetCharacter(session.character_id(game_id).unwrap()), state.game_runner_pipe.clone()).await?
         {
             Outcome::Found(char) => 
             {
@@ -106,7 +106,7 @@ async fn build_player_view(game_id: Uuid, session: &Session, state: &State<Metag
 
 async fn build_gm_view(game_id: Uuid, sesion: &Session, state: &State<Metagame<'_>>) -> Result<Template, Error>
 {
-    let outcome = send_and_recv(game_id, Event::GetPcCast, state.game_runner_pipe.clone()).await?;
+    let outcome = send_and_recv(game_id, Request::GetPcCast, state.game_runner_pipe.clone()).await?;
     let mut pcs: Vec<SimpleCharacterView>;
     let mut npcs: Vec<SimpleCharacterView>;
     let game_name = state.game_name(game_id).unwrap_or(String::from(""));
@@ -129,7 +129,7 @@ async fn build_gm_view(game_id: Uuid, sesion: &Session, state: &State<Metagame<'
         }
     }
 
-    let outcome = send_and_recv(game_id, Event::GetNpcCast, state.game_runner_pipe.clone()).await?;
+    let outcome = send_and_recv(game_id, Request::GetNpcCast, state.game_runner_pipe.clone()).await?;
     
     match outcome
     {
@@ -162,7 +162,7 @@ pub async fn add_npc(id: Uuid, session: Session, state: &State<Metagame<'_>>, np
 
     let character = Character::from(npc.into_inner());
     
-    let result = send_and_recv(id, Event::AddCharacter(character), state.game_runner_pipe.clone()).await?;
+    let result = send_and_recv(id, Request::AddCharacter(character), state.game_runner_pipe.clone()).await?;
 
     match result
     {
@@ -181,11 +181,11 @@ pub async fn add_pc(id: Uuid, session: Session, state: &State<Metagame<'_>>, pc:
 {
     let character = Character::from(pc.into_inner());
 
-    let result = send_and_recv(id, Event::AddCharacter(character), state.game_runner_pipe.clone()).await?;
+    let result = send_and_recv(id, Request::AddCharacter(character), state.game_runner_pipe.clone()).await?;
     
     match result
     {
-        Outcome::CharacterAdded(char_id) => 
+        Outcome::CharacterAdded((_, char_id)) => 
         {
             session.add_pc(id, char_id);
             return Ok(Redirect::to(uri!(game_view(id))));
@@ -216,7 +216,7 @@ pub async fn new_session(_proof_of_session: NewSessionOutcome, session: Session,
     Redirect::to(uri!("/"))
 }
 
-async fn send_and_recv(game_id: Uuid, body: Event, sender: Sender<Message>) -> Result<Outcome, Error>
+async fn send_and_recv(game_id: Uuid, body: Request, sender: Sender<Message>) -> Result<Outcome, Error>
 {
     let (their_sender, my_receiver) = channel::<Outcome>();
     let msg = Message { game_id, reply_channel: their_sender, msg: body };
