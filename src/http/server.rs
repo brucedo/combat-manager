@@ -18,7 +18,7 @@ pub async fn new_game(state: &State<Metagame<'_>>) -> Result<Json<NewGame>, (Sta
 
     let (runner_sender, response_channel) = channel::<Outcome>();
     // let msg = RequestMessage::New(NewGame{reply_channel: runner_sender});
-    let msg = Message { game_id: Uuid::new_v4(), reply_channel: runner_sender, msg: Request::New };
+    let msg = Message { player_id: None, game_id: Some(Uuid::new_v4()), reply_channel: runner_sender, msg: Request::New };
 
     match do_send(msg, msg_channel, response_channel).await
     {
@@ -83,7 +83,7 @@ pub async fn add_new_character(id: Uuid, character: Json<Character<'_>>, state: 
     // let char_id = game_char.id.clone();
 
     // let msg = RequestMessage::AddCharacter(AddCharacter{reply_channel: request, game_id: id, character: game_char});
-    let msg = Message{ game_id: id, reply_channel: request, msg: Request::AddCharacter(game_char) };
+    let msg = Message{ player_id: None, game_id: Some(id), reply_channel: request, msg: Request::AddCharacter(game_char) };
 
     match do_send(msg, msg_channel, response_channel).await
     {
@@ -118,19 +118,19 @@ pub async fn change_game_state(id: Uuid, new_state: Json<NewState>, state: &Stat
     {
         super::serde::State::Combat(combat_data) => {
             // msg = RequestMessage::StartCombat(CombatSetup { reply_channel: game_sender, game_id: id, combatants: combat_data.participants.clone() });
-            Message{ game_id: id, reply_channel: game_sender, msg: Request::StartCombat(combat_data.participants.clone()) }
+            Message{ player_id: None, game_id: Some(id), reply_channel: game_sender, msg: Request::StartCombat(combat_data.participants.clone()) }
             
         },
         super::serde::State::InitiativeRolls => {
             // RequestMessage::BeginInitiativePhase(SimpleMessage{reply_channel: game_sender, game_id: id})
-            Message { game_id: id, reply_channel: game_sender, msg: Request::BeginInitiativePhase }
+            Message { player_id: None, game_id: Some(id), reply_channel: game_sender, msg: Request::BeginInitiativePhase }
         },
         super::serde::State::InitiativePass => 
         {
             // RequestMessage::StartCombatRound(SimpleMessage{reply_channel: game_sender, game_id: id})
-            Message { game_id: id, reply_channel: game_sender, msg: Request::StartCombatRound }
+            Message { player_id: None, game_id: Some(id), reply_channel: game_sender, msg: Request::StartCombatRound }
         },
-        super::serde::State::EndOfTurn => {Message { game_id: id, reply_channel: game_sender, msg: Request::BeginEndOfTurn }},
+        super::serde::State::EndOfTurn => {Message { player_id: None, game_id: Some(id), reply_channel: game_sender, msg: Request::BeginEndOfTurn }},
     };
 
     match do_send(msg, msg_channel, game_receiver).await
@@ -164,7 +164,8 @@ pub async fn add_initiative_roll(id: Uuid, character_init: Json<InitiativeRoll>,
     // );
     let msg = Message 
     {
-        game_id: id, 
+        player_id: None, 
+        game_id: Some(id), 
         reply_channel: game_sender, 
         msg: Request::AddInitiativeRoll(Roll{ character_id: character_init.char_id, roll: character_init.roll }) 
     };

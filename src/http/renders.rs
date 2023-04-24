@@ -219,7 +219,7 @@ pub async fn new_session(_proof_of_session: NewSessionOutcome, session: Session,
 async fn send_and_recv(game_id: Uuid, body: Request, sender: Sender<Message>) -> Result<Outcome, Error>
 {
     let (their_sender, my_receiver) = channel::<Outcome>();
-    let msg = Message { game_id, reply_channel: their_sender, msg: body };
+    let msg = Message { player_id: None, game_id:Some(game_id), reply_channel: their_sender, msg: body };
     if let Err(_err) = sender.send(msg).await
     {
         return Err(Error::InternalServerError(Template::render("500", context! {action_name: "create a character", error: "The game runner closed its channel."})));

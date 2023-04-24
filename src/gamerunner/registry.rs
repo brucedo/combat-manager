@@ -22,6 +22,7 @@ pub struct PlayerDirectoryEntry
 pub struct GameDirectoryEntry
 {
     pub game: Game,
+    pub gm: Uuid,
     pub players: HashSet<Uuid>,
 }
 
@@ -39,10 +40,19 @@ impl <'a> GameRegistry
         GameRegistry { games: HashMap::new(), players: HashMap::new() }
     }
 
-    pub fn new_game(&'a mut self, id: Uuid, game: Game)
+    pub fn new_game(&'a mut self, player_id: PlayerId, game_id: GameId, game: Game) -> Result<(),()>
     {
-        let directory_entry = GameDirectoryEntry{ game, players: HashSet::new() };
-        self.games.insert(id, directory_entry);
+        if self.players.contains_key(&player_id)
+        {
+            let mut directory_entry = GameDirectoryEntry{ game, gm: player_id, players: HashSet::new() };
+            directory_entry.players.insert(player_id);
+            self.games.insert(game_id, directory_entry);
+            Ok(())
+        }
+        else
+        {
+            Err(())
+        }
     }
 
     pub fn get_mut_game(&'a mut self, id: Uuid) -> Option<&'a mut Game>
@@ -113,9 +123,9 @@ impl <'a> GameRegistry
         }
     }
 
-    pub fn game_has_player(&self, game_id: Uuid, player_id: Uuid) -> bool
+    pub fn game_has_player(&self, game_id: &Uuid, player_id: &Uuid) -> bool
     {
-        self.games.contains_key(&game_id) && self.games.get(&game_id).unwrap().players.contains(&player_id)
+        self.games.contains_key(game_id) && self.games.get(game_id).unwrap().players.contains(player_id)
     }
 
     pub fn player_in_game(&self, player_id: Uuid, game_id: Uuid) -> bool
@@ -237,21 +247,39 @@ impl <'a> GameRegistry
         }
     }
 
-    pub fn is_registered(&self, player_id: Uuid) -> bool
+    pub fn is_registered(&self, player_id: &Uuid) -> bool
     {
         self.players.contains_key(&player_id)
+    }
+
+    pub fn is_game(&self, game_id:  &Uuid) -> bool
+    {
+        self.games.contains_key(game_id)
+    }
+
+    pub fn is_gm(&self, player_id: &PlayerId, game_id: &GameId) -> bool
+    {
+        match self.games.get(game_id)
+        {
+            Some(game_entry) => {
+                game_entry.gm == *player_id
+            },
+            None => {
+                false
+            }
+        }
     }
 }
 
 #[cfg(test)]
 pub mod tests
 {
-    use std::collections::HashSet;
+    use std::{collections::HashSet, ops::RemAssign};
 
     use tokio::sync::mpsc::channel;
     use uuid::Uuid;
 
-    use crate::{tracker::game::Game, gamerunner::WhatChanged};
+    use crate::{tracker::game::Game, gamerunner::{WhatChanged, PlayerId}};
 
     use super::GameRegistry;
 
@@ -265,11 +293,14 @@ pub mod tests
     pub fn if_a_registry_holds_a_valid_game_for_a_given_id_then_get_mut_game_return_a_mutable_ref_wrapped_in_ok()
     {
         let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
 
         let game: Game = Game::new();
         let id = Uuid::new_v4();
 
-        registry.new_game(id, game);
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm ,id, game);
 
         assert!(registry.get_mut_game(id).is_some());
     }
@@ -288,11 +319,14 @@ pub mod tests
     pub fn if_a_registry_holds_a_valid_game_for_some_given_id_then_get_game_returns_a_borrow_wrapped_in_ok()
     {
         let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
 
         let game = Game::new();
         let id = Uuid::new_v4();
-        
-        registry.new_game(id, game);
+
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, id, game);
 
         assert!(registry.get_game(&id).is_some() );
     }
@@ -301,11 +335,14 @@ pub mod tests
     pub fn if_a_registry_does_not_hold_a_valid_game_for_some_given_id_then_get_game_returns_none()
     {
         let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
 
         let game = Game::new();
         let id = Uuid::new_v4();
 
-        registry.new_game(id, game);
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, id, game);
 
         assert!(registry.get_game(&Uuid::new_v4()).is_none());
     }
@@ -337,13 +374,16 @@ pub mod tests
     pub fn players_who_is_registered_may_join_a_game()
     {
         let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
 
         let player_id = Uuid::new_v4();
         let (sender, _) = channel(32);
         let game_id = Uuid::new_v4();
         let game = Game::new();
 
-        registry.new_game(game_id, game);
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_id, game);
         assert!(registry.register_player(player_id, sender).is_ok());
 
         assert!(registry.join_game(player_id, game_id).is_ok());
@@ -353,12 +393,15 @@ pub mod tests
     pub fn a_player_who_is_not_registered_will_generate_err_when_joining_a_game()
     {
         let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
 
         let player_id = Uuid::new_v4();
         let game_id = Uuid::new_v4();
         let game = Game::new();
 
-        registry.new_game(game_id, game);
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_id, game);
 
         assert!(registry.join_game(player_id, game_id).is_err());
     }
@@ -367,12 +410,16 @@ pub mod tests
     pub async fn a_players_sending_channel_may_be_retrieved_with_the_player_id()
     {
         let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
         let player_id = Uuid::new_v4();
         let (sender, mut receiver) = channel(32);
         let game_id = Uuid::new_v4();
         let game = Game::new();
 
-        registry.new_game(game_id, game);
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_id, game);
         assert!(registry.register_player(player_id, sender).is_ok());
 
         let player_comms = registry.get_player_sender(&player_id).unwrap();
@@ -388,6 +435,9 @@ pub mod tests
     {
         init();
         let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
         let game_1 = Uuid::new_v4();
         let game_2 = Uuid::new_v4();
         let game_3 = Uuid::new_v4();
@@ -396,9 +446,10 @@ pub mod tests
         let player_1 = Uuid::new_v4();
 
 
-        registry.new_game(game_1, Game::new());
-        registry.new_game(game_2, Game::new());
-        registry.new_game(game_3, Game::new());
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_1, Game::new());
+        registry.new_game(gm, game_2, Game::new());
+        registry.new_game(gm, game_3, Game::new());
         registry.register_player(player_1, sender);
 
         registry.join_game(player_1, game_1);
@@ -419,14 +470,18 @@ pub mod tests
         init();
 
         let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
 
         let game_1 = Uuid::new_v4();
         let game_2 = Uuid::new_v4();
         let game_3 = Uuid::new_v4();
 
-        registry.new_game(game_1, Game::new());
-        registry.new_game(game_2, Game::new());
-        registry.new_game(game_3, Game::new());
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_1, Game::new());
+        registry.new_game(gm, game_2, Game::new());
+        registry.new_game(gm, game_3, Game::new());
 
         let games = registry.enumerate_games();
 
@@ -484,12 +539,16 @@ pub mod tests
     {
         init();
         let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
         let game_1 = Uuid::new_v4();
 
         let (mut sender, _) = channel(32);
         let player_1 = Uuid::new_v4();
 
-        registry.new_game(game_1, Game::new());
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_1, Game::new());
         registry.register_player(player_1, sender);
 
         assert!(registry.games_by_player(Uuid::new_v4()).is_none());
@@ -502,7 +561,11 @@ pub mod tests
         init();
         let mut registry = GameRegistry::new();
         let game_1 = Uuid::new_v4();
-        registry.new_game(game_1, Game::new());
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_1, Game::new());
 
         let player_1 = Uuid::new_v4();
         let (mut sender, _) = channel(32);
@@ -517,6 +580,9 @@ pub mod tests
     pub fn a_game_may_enumerate_the_players_who_have_joined_it()
     {
         let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
         let game_1 = Uuid::new_v4();
 
         let player_1 = Uuid::new_v4();
@@ -530,7 +596,8 @@ pub mod tests
         registry.register_player(player_2, sender_2);
         registry.register_player(player_3, sender_3);
 
-        registry.new_game(game_1, Game::new());
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_1, Game::new());
 
         registry.join_game(player_1, game_1);
         registry.join_game(player_2, game_1);
@@ -550,12 +617,16 @@ pub mod tests
         init();
 
         let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
 
         let game_1 = Uuid::new_v4();
         let player_1 = Uuid::new_v4();
         let (sender_1, _) = channel(32);
 
-        registry.new_game(game_1, Game::new());
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_1, Game::new());
         registry.register_player(player_1, sender_1);
         
         let players = registry.players_by_game(&game_1);
@@ -569,13 +640,17 @@ pub mod tests
     {
         init();
         let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
         
         let game_1 = Uuid::new_v4();
 
         let player_1 = Uuid::new_v4();
         let (sender, _) = channel(32);
-
-        registry.new_game(game_1, Game::new());
+    
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_1, Game::new());
         registry.register_player(player_1, sender);
 
         registry.join_game(player_1, game_1);
@@ -589,13 +664,17 @@ pub mod tests
         init();
 
         let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
         let player_1 = Uuid::new_v4();
         let player_2 = Uuid::new_v4();
         let (mut sender, _) = channel(32);
         let game_id = Uuid::new_v4();
         let game = Game::new();
 
-        registry.new_game(game_id, game);
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_id, game);
         registry.register_player(player_1, sender);
         (sender, _) = channel(32);
         registry.register_player(player_2, sender);
@@ -604,7 +683,7 @@ pub mod tests
         registry.join_game(player_2, game_id);
 
         assert!(registry.leave_game(player_1, game_id).is_ok());
-        assert!(!registry.game_has_player(game_id, player_1));
+        assert!(!registry.game_has_player(&game_id, &player_1));
         assert!(!registry.player_in_game(player_1, game_id));
     }
 
@@ -614,11 +693,15 @@ pub mod tests
         init();
 
         let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
         let player_1 = Uuid::new_v4();
         let game_id = Uuid::new_v4();
         let game = Game::new();
 
-        registry.new_game(game_id, game);
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_id, game);
 
         assert!(registry.leave_game(player_1, game_id).is_err());
     }
@@ -629,6 +712,9 @@ pub mod tests
         init();
 
         let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
         let player_1 = Uuid::new_v4();
         let (sender_1, _) = channel(32);
         let player_2 = Uuid::new_v4();
@@ -638,7 +724,8 @@ pub mod tests
         
         let game_id = Uuid::new_v4();
 
-        registry.new_game(game_id, Game::new());
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_id, Game::new());
         registry.register_player(player_1, sender_1);
         registry.register_player(player_2, sender_2);
         registry.register_player(player_3, sender_3);
@@ -656,6 +743,8 @@ pub mod tests
         
     }
 
+    
+    #[test]
     pub fn when_delete_game_is_passed_an_id_that_does_not_represent_a_real_game_err_is_returned()
     {
         init();
@@ -665,10 +754,14 @@ pub mod tests
         assert!(registry.delete_game(Uuid::new_v4()).is_err());
     }
 
+    #[test]
     pub fn when_a_player_unregisters_they_are_removed_from_all_games_they_are_part_of()
     {
         init();
         let  mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
 
         let player_1 = Uuid::new_v4();
         let (sender_1, _) = channel(32);
@@ -678,8 +771,9 @@ pub mod tests
         let game_1 = Uuid::new_v4();
         let game_2 = Uuid::new_v4();
 
-        registry.new_game(game_1, Game::new());
-        registry.new_game(game_2, Game::new());
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_1, Game::new());
+        registry.new_game(gm, game_2, Game::new());
         registry.register_player(player_1, sender_1);
         registry.register_player(player_2, sender_2);
 
@@ -704,6 +798,9 @@ pub mod tests
         init();
 
         let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
 
         let player_1 = Uuid::new_v4();
         let (sender_1, _) = channel(32);
@@ -713,8 +810,9 @@ pub mod tests
         let game_1 = Uuid::new_v4();
         let game_2 = Uuid::new_v4();
 
-        registry.new_game(game_1, Game::new());
-        registry.new_game(game_2, Game::new());
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_1, Game::new());
+        registry.new_game(gm, game_2, Game::new());
         registry.register_player(player_1, sender_1);
         registry.register_player(player_2, sender_2);
 
@@ -729,6 +827,9 @@ pub mod tests
         init();
 
         let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
 
         let player_1 = Uuid::new_v4();
         let (sender_1, _) = channel(32);
@@ -736,11 +837,12 @@ pub mod tests
         let game_1 = Uuid::new_v4();
 
         registry.register_player(player_1, sender_1);
-        registry.new_game(game_1, Game::new());
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_1, Game::new());
 
         registry.join_game(player_1, game_1);
 
-        assert!(registry.is_registered(player_1));
+        assert!(registry.is_registered(&player_1));
     }
 
     #[test]
@@ -750,7 +852,7 @@ pub mod tests
 
         let mut registry = GameRegistry::new();
 
-        assert!(!registry.is_registered(Uuid::new_v4()));
+        assert!(!registry.is_registered(&Uuid::new_v4()));
     }
 
     #[test]
@@ -759,6 +861,8 @@ pub mod tests
         init();
 
         let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
 
         let player_1 = Uuid::new_v4();
         let (sender_1, _) = channel(32);
@@ -767,14 +871,231 @@ pub mod tests
 
         let game_1 = Uuid::new_v4();
 
-        registry.new_game(game_1, Game::new());
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_1, Game::new());
         registry.register_player(player_1, sender_1);
         registry.register_player(player_2, sender_2);
 
         registry.join_game(player_1, game_1);
 
-        assert!(registry.is_registered(player_1));
-        assert!(registry.is_registered(player_2));
+        assert!(registry.is_registered(&player_1));
+        assert!(registry.is_registered(&player_2));
+    }
+
+    #[test]
+    pub fn game_has_player_will_return_false_if_the_game_id_is_unknown()
+    {
+        init();
+
+        let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
+        let player_1 = Uuid::new_v4();
+        let (sender_1, _) = channel(32);
+
+        let game_1 = Uuid::new_v4();
+
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_1, Game::new());
+        registry.register_player(player_1, sender_1);
+
+        assert!(!registry.game_has_player(&Uuid::new_v4(), &player_1))
+    }
+
+    #[test]
+    pub fn game_has_player_will_return_false_if_the_player_id_is_unknown()
+    {
+        init();
+
+        let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
+        let player_1 = Uuid::new_v4();
+        let (sender_1, _) = channel(32);
+
+        let game_1 = Uuid::new_v4();
+
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_1, Game::new());
+        registry.register_player(player_1, sender_1);
+
+        assert!(!registry.game_has_player(&game_1, &Uuid::new_v4()));
+    }
+
+    #[test]
+    pub fn game_has_player_will_return_false_if_the_player_id_is_registered_and_has_joined_a_game_but_not_the_one_being_asked_about()
+    {
+        init();
+
+        let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
+        let player_1 = Uuid::new_v4();
+        let player_2 = Uuid::new_v4();
+        let (sender_1, _) = channel(32);
+        let (sender_2, _) = channel(32);
+
+        let game_1 = Uuid::new_v4();
+        let game_2 = Uuid::new_v4();
+
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_1, Game::new());
+        registry.new_game(gm, game_2, Game::new());
+
+        registry.register_player(player_1, sender_1);
+        registry.register_player(player_2, sender_2);
+
+        registry.join_game(player_1, game_1);
+        registry.join_game(player_2, game_2);
+
+        assert!(!registry.game_has_player(&game_2, &player_1));
+    }
+
+    #[test]
+    pub fn game_has_player_returns_true_when_a_player_id_is_a_player_in_the_game_being_queried()
+    {
+        init();
+
+        let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
+
+        let player_1 = Uuid::new_v4();
+        let (sender_1, _) = channel(32);
+
+        let game_1 = Uuid::new_v4();
+
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_1, Game::new()); 
+
+        registry.register_player(player_1, sender_1);
+
+        registry.join_game(player_1, game_1);
+
+        assert!(registry.game_has_player(&game_1, &player_1));
+    }
+
+    #[test]
+    pub fn player_in_game_will_return_false_if_either_the_game_or_the_player_id_is_unknown()
+    {
+        init();
+
+        let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
+        let player_1 = Uuid::new_v4();
+        let (sender_1, _) = channel(32);
+
+        let game_1 = Uuid::new_v4();
+
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_1, Game::new());
+        registry.register_player(player_1, sender_1);
+
+        assert!(!registry.player_in_game(Uuid::new_v4(), Uuid::new_v4()));
+    }
+
+    #[test]
+    pub fn is_game_will_return_true_if_the_game_id_maps_to_a_real_game_directory_entry()
+    {
+        init();
+
+        let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
+        
+        let game_1 = Uuid::new_v4();
+
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_1, Game::new());
+        
+        assert!(registry.is_game(&game_1));
+    }
+
+    #[test]
+    pub fn is_game_will_return_false_if_the_game_id_does_not_map_to_a_real_game_directory_entry()
+    {
+        init();
+
+        let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
+
+        let game_1 = Uuid::new_v4();
+
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_1, Game::new());
+
+        assert!(!registry.is_game(&Uuid::new_v4()));
+    }
+
+    #[test]
+    pub fn is_gm_will_retur_false_if_the_game_id_does_not_map_to_a_real_game_directory_entry()
+    {
+        init();
+
+        let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
+        let game_1 = Uuid::new_v4();
+
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_1, Game::new());
+    }
+
+    #[test]
+    pub fn is_gm_will_return_false_if_the_game_id_maps_but_the_provided_player_id_is_not_the_gm()
+    {
+        init();
+
+        let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
+        let game_1 = Uuid::new_v4();
+
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_1, Game::new());
+
+        let player_1 = PlayerId::new_v4();
+        let (player_1_sender, _) = channel(32);
+
+        registry.register_player(player_1, player_1_sender);
+        registry.join_game(player_1, game_1);
+
+        assert!(!registry.is_gm(&player_1, &game_1));
+    }
+
+    #[test]
+    pub fn is_gm_will_return_true_if_the_game_id_maps_to_a_valid_game_entry_and_the_player_id_matches_the_gm_field()
+    {
+        init();
+
+        let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
+        let game_1 = Uuid::new_v4();
+
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_1, Game::new());
+
+        let player_1 = PlayerId::new_v4();
+        let (player_1_sender, _) = channel(32);
+
+        registry.register_player(player_1, player_1_sender);
+        registry.join_game(player_1, game_1);
+
+        assert!(registry.is_gm(&gm, &game_1));
+        
     }
 
 }

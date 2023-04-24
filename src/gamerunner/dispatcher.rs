@@ -7,11 +7,12 @@ use uuid::Uuid;
 
 use crate::tracker::{game::{Game, ActionType}, character::Character};
 
-use super::{registry::GameRegistry, GameId, ErrorKind, Error, PlayerId, WhatChanged};
+use super::{registry::GameRegistry, GameId, ErrorKind, Error, PlayerId, WhatChanged, authority::{Authority, Role}};
 
 pub struct Message
 {
-    pub game_id: Uuid,
+    pub game_id: Option<GameId>,
+    pub player_id: Option<PlayerId>,
     pub reply_channel: OneShotSender<Outcome>,
     pub msg: Request,
 }
@@ -107,10 +108,10 @@ pub struct GameState
     pub for_player: Uuid,
 }
 
-pub fn dispatch_message(registry: &mut GameRegistry, game_id: GameId, msg: Request) -> (Outcome, Option<HashSet<Uuid>>)
+pub fn dispatch_message(registry: &mut GameRegistry, authority: &Authority) -> (Outcome, Option<HashSet<Uuid>>)
 {
-    
-    match msg
+    let (player_id, game_id, request) = (authority.player_id(), authority.game_id(), authority.request());
+    match request
     {
         Request::NewPlayer => {
             debug!("Request is to register as a player.");
@@ -122,89 +123,89 @@ pub fn dispatch_message(registry: &mut GameRegistry, game_id: GameId, msg: Reque
         }
         Request::New => {
             debug!("Request is for new game.");
-            (new_game(registry), None)
+            (new_game(authority, registry), None)
         },
         Request::Delete => {
             debug!("Request is to remove game.");
-            end_game(game_id, registry)
+            end_game(authority, registry)
         },
         Request::JoinGame(player_id) => {
             debug!("Request is to let a player join a game.");
-            join_game(player_id, game_id, registry)
+            join_game(authority, registry)
         },
         Request::AddCharacter(character) => {
             debug!("Request is to add a new character.");
-            find_game_and_act(registry, game_id, | game | {add_character(character, game, game_id)})
+            find_game_and_act(authority, registry, | game, authority | {add_character(character, game, authority)})
         },
-        Request::GetFullCast => {
-            debug!("Request is to get the full cast list.");
-            find_game_and_act(registry, game_id, get_full_cast)
-        },
-        Request::GetNpcCast => {
-            debug!("Request is to get the NPC cast list.");
-            find_game_and_act(registry, game_id, get_npcs)
-        },
-        Request::GetPcCast => {
-            debug!("Reqeust is to get the PC cast list.");
-            find_game_and_act(registry, game_id, get_pcs)
-        }
-        Request::GetCharacter(id) => {
-            debug!("Request is to get a character by id.");
-            find_game_and_act(registry, game_id, |game| {get_char(id, game)})
-        }
-        Request::StartCombat(combatants) => {
-            debug!("Request is to start the combat phase.");                
-            find_game_and_act(registry, game_id, | game | {start_combat(combatants.to_owned(), game)})
-        },
-        Request::AddInitiativeRoll(roll) => {
-            debug!("Request is to add an initiative roll.");
-            find_game_and_act(registry, game_id, | game | { add_init_roll(roll, game)})
-        },
-        Request::BeginInitiativePhase => {
-            debug!("Request is to begin the initiative phase.");
-            find_game_and_act(registry, game_id, try_initiative_phase)
-        },
-        Request::StartCombatRound => {
-            debug!("Request is to begin a combat round.");
-            find_game_and_act( registry, game_id, try_begin_combat)
-        },
-        Request::TakeAction(action) =>
-        {
-            debug!("Request is for some character to perform some action.");
-            find_game_and_act( registry, game_id, | game | {take_action(game, action)})
-        }
-        Request::AdvanceTurn => {
-            debug!("Request is to advance to the next event in the pass.");
-            find_game_and_act( registry, game_id, try_advance_turn)
-        }
-        Request::WhoGoesThisTurn => {
-            debug!("Request is to see who is going this turn.");
-            find_game_and_act(registry, game_id, list_current_turn_events)
-        }
-        Request::WhatHasYetToHappenThisTurn => {
-            debug!("Request is to see who has yet to go.");
-            find_game_and_act(registry, game_id, list_unresolved_events)
-        }
-        Request::WhatHappensNextTurn => {
-            debug!("Request is to see what happens next turn.");
-            find_game_and_act(registry, game_id, list_next_turn_events)
-        }
-        Request::AllEventsThisPass => {
-            debug!("Request is for a full accounting of all events on this pass.");
-            find_game_and_act(registry, game_id, list_all_events_by_id_this_pass)
-        }
-        Request::NextInitiative => {
-            debug!("Request is to get the next initiative number.");
-            find_game_and_act(registry, game_id, next_initiative)
-        }
-        Request::CurrentInitiative => {
-            debug!("Request is to get the current initiative number.");
-            find_game_and_act(registry, game_id, current_initiative)
-        }
-        Request::AllRemainingInitiatives => {
-            debug!("Request is to get any initiatives that have not been fully resolved.");
-            find_game_and_act(registry, game_id, remaining_initiatives_are)
-        }
+        // Request::GetFullCast => {
+        //     debug!("Request is to get the full cast list.");
+        //     find_game_and_act(registry, game_id, get_full_cast)
+        // },
+        // Request::GetNpcCast => {
+        //     debug!("Request is to get the NPC cast list.");
+        //     find_game_and_act(registry, game_id, get_npcs)
+        // },
+        // Request::GetPcCast => {
+        //     debug!("Reqeust is to get the PC cast list.");
+        //     find_game_and_act(registry, game_id, get_pcs)
+        // }
+        // Request::GetCharacter(id) => {
+        //     debug!("Request is to get a character by id.");
+        //     find_game_and_act(registry, game_id, |game| {get_char(id, game)})
+        // }
+        // Request::StartCombat(combatants) => {
+        //     debug!("Request is to start the combat phase.");                
+        //     find_game_and_act(registry, game_id, | game | {start_combat(combatants.to_owned(), game)})
+        // },
+        // Request::AddInitiativeRoll(roll) => {
+        //     debug!("Request is to add an initiative roll.");
+        //     find_game_and_act(registry, game_id, | game | { add_init_roll(roll, game)})
+        // },
+        // Request::BeginInitiativePhase => {
+        //     debug!("Request is to begin the initiative phase.");
+        //     find_game_and_act(registry, game_id, try_initiative_phase)
+        // },
+        // Request::StartCombatRound => {
+        //     debug!("Request is to begin a combat round.");
+        //     find_game_and_act( registry, game_id, try_begin_combat)
+        // },
+        // Request::TakeAction(action) =>
+        // {
+        //     debug!("Request is for some character to perform some action.");
+        //     find_game_and_act( registry, game_id, | game | {take_action(game, action)})
+        // }
+        // Request::AdvanceTurn => {
+        //     debug!("Request is to advance to the next event in the pass.");
+        //     find_game_and_act( registry, game_id, try_advance_turn)
+        // }
+        // Request::WhoGoesThisTurn => {
+        //     debug!("Request is to see who is going this turn.");
+        //     find_game_and_act(registry, game_id, list_current_turn_events)
+        // }
+        // Request::WhatHasYetToHappenThisTurn => {
+        //     debug!("Request is to see who has yet to go.");
+        //     find_game_and_act(registry, game_id, list_unresolved_events)
+        // }
+        // Request::WhatHappensNextTurn => {
+        //     debug!("Request is to see what happens next turn.");
+        //     find_game_and_act(registry, game_id, list_next_turn_events)
+        // }
+        // Request::AllEventsThisPass => {
+        //     debug!("Request is for a full accounting of all events on this pass.");
+        //     find_game_and_act(registry, game_id, list_all_events_by_id_this_pass)
+        // }
+        // Request::NextInitiative => {
+        //     debug!("Request is to get the next initiative number.");
+        //     find_game_and_act(registry, game_id, next_initiative)
+        // }
+        // Request::CurrentInitiative => {
+        //     debug!("Request is to get the current initiative number.");
+        //     find_game_and_act(registry, game_id, current_initiative)
+        // }
+        // Request::AllRemainingInitiatives => {
+        //     debug!("Request is to get any initiatives that have not been fully resolved.");
+        //     find_game_and_act(registry, game_id, remaining_initiatives_are)
+        // }
         _ => {todo!()}
     }
 }
@@ -213,10 +214,11 @@ fn register_player(player_directory: &mut GameRegistry) -> Outcome
 {
     let mut player_id = Uuid::new_v4();
 
-    while player_directory.is_registered(player_id)
+    while player_directory.is_registered(&player_id)
     {
         player_id = Uuid::new_v4();
     }
+
     let (player_sender, player_receiver) = channel(32);
     let player_info = NewPlayer{ player_id, player_1_receiver: player_receiver };   
 
@@ -244,67 +246,97 @@ fn enumerate(running_games: &mut GameRegistry ) -> Outcome
     return Outcome::Summaries(enumeration);
 }
 
-fn new_game(running_games: &mut GameRegistry) -> Outcome
+fn new_game(authority: &Authority, running_games: &mut GameRegistry) -> Outcome
 {
     let response: Outcome;
 
-    let game_id = Uuid::new_v4();
-    running_games.new_game(game_id, Game::new());
-    response = Outcome::Created(game_id);
-
+    if let Some(player_id) = authority.player_id()
+    {
+        let game_id = Uuid::new_v4();
+        running_games.new_game(player_id, game_id, Game::new());
+        response = Outcome::Created(game_id);
+    }
+    else
+    {
+        response = Outcome::Error(Error { message: String::from("Player ID field was left blank."), kind: ErrorKind::InvalidStateAction})
+    }
     return response;
 }
 
-fn end_game(game: Uuid, directory: &mut GameRegistry) -> (Outcome, Option<HashSet<Uuid>>)
+fn end_game(authority: &Authority, directory: &mut GameRegistry) -> (Outcome, Option<HashSet<Uuid>>)
 {
-
-    match directory.delete_game(game)
+    if *authority.resource_role() != Role::RoleGM
     {
-        Ok(game_entry) => 
+        (Outcome::Error(Error { message: String::from("The action requested (Delete Game) may only be initiated by the game's GM."), kind: ErrorKind::NotGameOwner }), 
+        None)
+    }
+    else if let Some(game_id) = authority.game_id()
+    {
+
+        match directory.delete_game(game_id)
         {
-            let to_notify = game_entry.players;
-            // let to_notify = directory.players_by_game(game);
-            (Outcome::Destroyed, Some(to_notify))
-        },
-        Err(_) => 
-        {
-            (Outcome::Error(
-            Error{ message: String::from(format!("No game by ID {} exists.", game.clone())), kind: ErrorKind::NoMatchingGame }), None)
-        },
+            Ok(game_entry) => 
+            {
+                let to_notify = game_entry.players;
+                // let to_notify = directory.players_by_game(game);
+                (Outcome::Destroyed, Some(to_notify))
+            },
+            Err(_) => 
+            {
+                (Outcome::Error(
+                Error{ message: String::from(format!("No game by ID {} exists.", game_id)), kind: ErrorKind::NoMatchingGame }), None)
+            },
+        }
+    }
+    else {
+        (Outcome::Error(Error { message: String::from("This branch probably should not be accessible while ending a game."), kind: ErrorKind::InvalidStateAction }), None)
     }
 }
 
-fn join_game(player_id: Uuid, game_id: Uuid, game_directory: &mut GameRegistry) -> (Outcome, Option<HashSet<PlayerId>>)
+fn join_game(authority: &Authority, game_directory: &mut GameRegistry) -> (Outcome, Option<HashSet<PlayerId>>)
 {
 
-    match game_directory.join_game(player_id, game_id)
+    if let (Some(player_id), Some(game_id)) = (authority.player_id(), authority.game_id())
     {
-        Ok(_) => 
-        {   
-            // let to_notify = game_directory.players_by_game(game_id);
-            (Outcome::JoinedGame(GameState {for_player: player_id}), None)
-        },
-        Err(_) => 
+        match game_directory.join_game(player_id, game_id)
         {
-            (Outcome::Error(Error { message: String::from(format!("No matching game for id {}", game_id)), kind: ErrorKind::NoMatchingGame }), None)
-        },
+            Ok(_) => 
+            {   
+                // let to_notify = game_directory.players_by_game(game_id);
+                (Outcome::JoinedGame(GameState {for_player: player_id}), None)
+            },
+            Err(_) => 
+            {
+                (Outcome::Error(Error { message: String::from(format!("No matching game for id {}", game_id)), kind: ErrorKind::NoMatchingGame }), None)
+            },
+        }
+    }
+    else
+    {
+        (Outcome::Error(Error { message: String::from("One or both of the player id and game id were empty."), kind: ErrorKind::InvalidStateAction}), None)
     }
 }
 
-fn find_game_and_act<F>(running_games: &mut GameRegistry, game_id: Uuid, action: F) -> (Outcome, Option<HashSet<PlayerId>>)
+fn find_game_and_act<F>(authority: &Authority, running_games: &mut GameRegistry, action: F) -> (Outcome, Option<HashSet<PlayerId>>)
 where
-    F: FnOnce(&mut Game) -> Outcome
+    F: FnOnce(&mut Game, &Authority) -> Outcome
 {
     let response: Outcome;
-    // let mut send_to = running_games.players_by_game(game_id);
-
-    match running_games.get_mut_game(game_id)
+    
+    if let Some(game_id) = authority.game_id()
     {
-        Some(mut game) => 
+        match running_games.get_mut_game(game_id)
         {
-            response = action(&mut game);
-        },
-        None => {response = game_not_found(game_id)},
+            Some(mut game) => 
+            {
+                response = action(&mut game, authority);
+            },
+            None => {response = game_not_found(game_id)},
+        }
+    }
+    else
+    {
+        response = Outcome::Error(Error {message: String::from("Game ID field left empty - action cannot be taken."), kind: ErrorKind::InvalidStateAction})
     }
 
     return (response, None);
@@ -322,10 +354,20 @@ fn game_not_found(id: Uuid) -> Outcome
     )
 }
 
-fn add_character(character: Character, game: &mut Game, game_id: GameId) -> Outcome
+fn add_character(character: &Character, game: &mut Game, authority: &Authority) -> Outcome
 {
-    let char_id = game.add_cast_member(character);
-    return Outcome::CharacterAdded((game_id, char_id));
+    match authority.resource_role()
+    {
+        Role::RolePlayer | Role::RoleGM => {
+            let game_id = authority.game_id().unwrap();
+            let char_id = game.add_cast_member((*character).clone());
+            return Outcome::CharacterAdded((game_id, char_id));
+        }, 
+        _ => {
+            return Outcome::Error(Error { message: String::from("Observers may not create characters in a game."), kind: ErrorKind::InvalidStateAction })
+        }
+    }
+    
 }
 
 fn get_full_cast(game: &mut Game) -> Outcome
