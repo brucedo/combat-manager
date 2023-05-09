@@ -1,8 +1,10 @@
-use super::{PlayerId, GameId, dispatcher::{Request, Message}, registry::GameRegistry};
+use std::collections::HashSet;
+
+use super::{PlayerId, GameId, dispatcher::{Request, Message}, registry::GameRegistry, CharacterId};
 
 
 
-pub fn authorize<'a, 'b>(game_id: Option<GameId>, player_id: Option<PlayerId>, request: Request, directory: &'b GameRegistry) -> Authority
+pub fn authorize<'a, 'b>(game_id: Option<GameId>, player_id: Option<PlayerId>, request: Request, directory: &'b mut GameRegistry) -> Authority
 {
 
     match (game_id, player_id)
@@ -11,7 +13,7 @@ pub fn authorize<'a, 'b>(game_id: Option<GameId>, player_id: Option<PlayerId>, r
             Authority {player_id: player_id, game_id: game_id, resource_role: Role::RoleObserver, request}
         },
         (Some(game_id), Some(player_id)) => {
-            let resource_role: Role = 
+            let resource_role = 
             if directory.is_gm(&player_id, &game_id)
             {
                 Role::RoleGM
@@ -49,7 +51,7 @@ pub struct Authority
     request: Request
 }
 
-impl Authority 
+impl Authority
 {
     pub fn player_id(&self) -> Option<PlayerId>
     {
@@ -66,8 +68,8 @@ impl Authority
         &self.resource_role
     }
 
-    pub fn request<'a>(&'a self) -> Request
+    pub fn request<'a>(&'a self) -> &'a Request
     {
-        self.request
+        &self.request
     }
 }

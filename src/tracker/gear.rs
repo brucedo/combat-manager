@@ -1,3 +1,4 @@
+#[derive(Clone)]
 pub enum DamageType {
     Physical,
     Stun
@@ -8,6 +9,7 @@ pub enum ArmorTestType {
     Impact
 }
 
+#[derive(Clone)]
 pub enum ReloadMethod {
     Clip,
     Break,
@@ -19,6 +21,7 @@ pub enum ReloadMethod {
     SingleShot
 }
 
+#[derive(Clone)]
 pub struct Weapon {
     pub weapon_type: String,
     pub weapon_name: String,
@@ -28,6 +31,7 @@ pub struct Weapon {
     pub electric: bool,
 }
 
+#[derive(Clone)]
 pub struct FiringFeature {
     pub feature_name: String,
     pub reloads: ReloadMethod,
@@ -51,6 +55,7 @@ pub struct AmmoTypes
     pub electrical: bool
 }
 
+#[derive(Clone)]
 pub struct Armour {
     pub name: String,
     pub ballistic_rating: i8,

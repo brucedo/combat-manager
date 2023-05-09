@@ -66,6 +66,29 @@ impl Character
     }
 }
 
+impl Clone for Character
+{
+    fn clone(&self) -> Self {    
+        Self { 
+            name: self.name.clone(), 
+            id: self.id.clone(), 
+            player_character: self.player_character.clone(), 
+            metatype: self.metatype.clone(), 
+            stats: self.stats.clone(), 
+            qualities: self.qualities.clone(), 
+            skills: self.skills.clone(), 
+            weapons: self.weapons.clone(), 
+            armor: self.armor.clone(), 
+            physical_track_max: self.physical_track_max.clone(), 
+            physical_track_filled: 
+            self.physical_track_filled.clone(), 
+            stun_track_max: self.stun_track_max.clone(), 
+            stun_track_filled: self.stun_track_filled.clone(), 
+            current_weapon_index: self.current_weapon_index.clone() 
+        }
+    }
+}
+
 #[derive(Copy, Clone, Serialize, Deserialize)]
 pub enum Metatypes
 {
@@ -76,6 +99,7 @@ pub enum Metatypes
     Orc,
 }
 
+#[derive(Clone)]
 pub struct Quality
 {
     pub name: String,
@@ -83,6 +107,7 @@ pub struct Quality
     pub skill_modifier: i8,
 }
 
+#[derive(Clone)]
 pub struct Skill
 {
     pub name: String,

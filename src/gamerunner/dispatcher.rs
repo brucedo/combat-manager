@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::tracker::{game::{Game, ActionType}, character::Character};
 
-use super::{registry::GameRegistry, GameId, ErrorKind, Error, PlayerId, WhatChanged, authority::{Authority, Role}};
+use super::{registry::GameRegistry, GameId, ErrorKind, Error, PlayerId, WhatChanged, authority::{Authority, Role}, CharacterId};
 
 pub struct Message
 {
@@ -135,27 +135,28 @@ pub fn dispatch_message(registry: &mut GameRegistry, authority: &Authority) -> (
         },
         Request::AddCharacter(character) => {
             debug!("Request is to add a new character.");
-            find_game_and_act(authority, registry, | game, authority | {add_character(character, game, authority)})
+            find_game_and_act(authority, registry, | game, authority | {add_character(&character, game, authority)})
         },
-        // Request::GetFullCast => {
-        //     debug!("Request is to get the full cast list.");
-        //     find_game_and_act(registry, game_id, get_full_cast)
-        // },
-        // Request::GetNpcCast => {
-        //     debug!("Request is to get the NPC cast list.");
-        //     find_game_and_act(registry, game_id, get_npcs)
-        // },
-        // Request::GetPcCast => {
-        //     debug!("Reqeust is to get the PC cast list.");
-        //     find_game_and_act(registry, game_id, get_pcs)
-        // }
-        // Request::GetCharacter(id) => {
-        //     debug!("Request is to get a character by id.");
-        //     find_game_and_act(registry, game_id, |game| {get_char(id, game)})
-        // }
+        Request::GetFullCast => {
+            debug!("Request is to get the full cast list.");
+            find_game_and_act(authority, registry, get_full_cast)
+        },
+        Request::GetNpcCast => {
+            debug!("Request is to get the NPC cast list.");
+            find_game_and_act(authority, registry, get_npcs)
+        },
+        Request::GetPcCast => {
+            debug!("Reqeust is to get the PC cast list.");
+            find_game_and_act(authority, registry, get_pcs)
+        }
+        Request::GetCharacter(id) => {
+            debug!("Request is to get a character by id.");
+            (get_char(id, registry, authority), None)
+            // find_game_and_act(authority, registry, |game, authority| {get_char(id, registry, authority)})
+        }
         // Request::StartCombat(combatants) => {
         //     debug!("Request is to start the combat phase.");                
-        //     find_game_and_act(registry, game_id, | game | {start_combat(combatants.to_owned(), game)})
+        //     find_game_and_act(authority, registry, | game | {start_combat(combatants.to_owned(), game)})
         // },
         // Request::AddInitiativeRoll(roll) => {
         //     debug!("Request is to add an initiative roll.");
@@ -370,24 +371,49 @@ fn add_character(character: &Character, game: &mut Game, authority: &Authority) 
     
 }
 
-fn get_full_cast(game: &mut Game) -> Outcome
+fn get_full_cast(game: &mut Game, authority: &Authority) -> Outcome
 {
-    Outcome::CastList(game.get_cast())
+    match authority.resource_role()
+    {
+        Role::RoleGM => {
+            Outcome::CastList(game.get_cast())
+        }
+        _ => Outcome::Error(Error { message: String::from("Only GMs may request the full character roster."), kind: ErrorKind::InvalidStateAction })
+    }
+    
 }
 
-fn get_npcs(game: &mut Game) -> Outcome
+fn get_npcs(game: &mut Game, authority: &Authority) -> Outcome
 {
-    Outcome::CastList(game.get_npcs())
+    match authority.resource_role() 
+    {
+        Role::RoleGM => {
+            Outcome::CastList(game.get_npcs())
+        }
+        _ => Outcome::Error(Error {message: String::from("Only GMs may request the NPC character roster."), kind: ErrorKind::InvalidStateAction })
+    }
+    
 }
 
-fn get_pcs(game: &mut Game) -> Outcome
+fn get_pcs(game: &mut Game, authority: &Authority) -> Outcome
 {
-    Outcome::CastList(game.get_pcs())
+    match authority.resource_role()
+    {
+        Role::RoleGM | Role::RolePlayer => {
+            Outcome::CastList(game.get_pcs())
+        }
+        _ => Outcome::Error(Error {message: String::from("Only active participants in the game may get the player roster."), kind: ErrorKind::InvalidStateAction })
+    }
+    
 }
 
-fn get_char(char_id:Uuid, game: &mut Game) -> Outcome
+fn get_char(char_id: &CharacterId, game: &mut GameRegistry, authority: &Authority) -> Outcome
 {
-    Outcome::Found(game.get_cast_by_id(&char_id))
+    if let (Some(game_id), Some(player_id)) = (authority.game_id(), authority.player_id())
+    {
+
+    }
+    return Outcome::Error(Error{ message: String::from("Cannot get character for a game or player that does not exist."), kind: ErrorKind::NotGamePlayer });
 }
 
 fn start_combat(combatants: Vec<Uuid>, game: &mut Game) -> Outcome

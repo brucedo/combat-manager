@@ -24,9 +24,10 @@ pub async fn game_runner(mut message_queue: Receiver<Message>)
         let (channel, player_id_opt, game_id_opt, request) = 
             (message.reply_channel, message.player_id, message.player_id, message.msg);
 
-        let authority = authorize(player_id_opt, game_id_opt, request, &directory);
+        let mut_directory = &mut directory;
+        let authority = authorize(player_id_opt, game_id_opt, request, mut_directory);
         // let (channel, game_id) = (message.reply_channel, message.game_id);
-        let (response, to_notify) = dispatch_message(&mut directory, &authority);
+        let (response, to_notify) = dispatch_message(mut_directory, &authority);
 
         // if let Some(notification) = into_notification(&directory,&response, &game_id, todo!())
         // {

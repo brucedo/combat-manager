@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::tracker::game::Game;
 
-use super::{WhatChanged};
+use super::{WhatChanged, CharacterId};
 
 type PlayerId = Uuid;
 type GameId = Uuid;
@@ -255,6 +255,17 @@ impl <'a> GameRegistry
     pub fn is_game(&self, game_id:  &Uuid) -> bool
     {
         self.games.contains_key(game_id)
+    }
+
+    pub fn player_chars(&self, game_id: &GameId, player_id: &PlayerId) -> Option<&HashSet<CharacterId>>
+    {
+        match self.players.get(player_id)
+        {
+            Some(entry) => {
+                Some(&entry.player_characters)
+            },
+            None => None,
+        }
     }
 
     pub fn is_gm(&self, player_id: &PlayerId, game_id: &GameId) -> bool
