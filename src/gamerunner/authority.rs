@@ -9,25 +9,30 @@ pub fn authorize<'a, 'b>(game_id: Option<GameId>, player_id: Option<PlayerId>, r
 
     match (game_id, player_id)
     {
-        (_, None) | (None, _) => {
-            Authority {player_id: player_id, game_id: game_id, resource_role: Role::RoleObserver, request}
-        },
         (Some(game_id), Some(player_id)) => {
             let resource_role = 
             if directory.is_gm(&player_id, &game_id)
             {
-                Role::RoleGM
+                Role::RoleGM(player_id, game_id)
             }
             else if directory.game_has_player(&game_id, &player_id)
             {
-                Role::RolePlayer
+                Role::RolePlayer(player_id, game_id)
             }
             else 
             {
-                Role::RoleObserver
+                Role::RoleObserver(player_id, game_id)
             };
 
-            Authority {player_id: Some(player_id), game_id: Some(game_id), resource_role, request}
+            // Authority {player_id: Some(player_id), game_id: Some(game_id), resource_role, request}
+            Authority {resource_role, request }
+        }, 
+        (None, Some(player_id)) => {
+            Authority {resource_role: Role::RoleRegistered(player_id), request}
+        }
+        (_, None) =>
+        {
+            Authority {resource_role: Role::RoleUnregistered, request}
         }
     }
 
@@ -38,30 +43,32 @@ pub fn authorize<'a, 'b>(game_id: Option<GameId>, player_id: Option<PlayerId>, r
 #[derive(PartialEq)]
 pub enum Role
 {
-    RoleGM,
-    RolePlayer,
-    RoleObserver,
+    RoleGM(PlayerId, GameId),
+    RolePlayer(PlayerId, GameId),
+    RoleObserver(PlayerId, GameId),
+    RoleRegistered(PlayerId),
+    RoleUnregistered
 }
 
 pub struct Authority
 {
-    player_id: Option<PlayerId>, 
-    game_id: Option<GameId>, 
+    // player_id: Option<PlayerId>, 
+    // game_id: Option<GameId>, 
     resource_role: Role,
     request: Request
 }
 
 impl Authority
 {
-    pub fn player_id(&self) -> Option<PlayerId>
-    {
-        self.player_id
-    }
+    // pub fn player_id(&self) -> Option<PlayerId>
+    // {
+    //     self.player_id
+    // }
 
-    pub fn game_id(&self) -> Option<GameId>
-    {
-        self.game_id
-    }
+    // pub fn game_id(&self) -> Option<GameId>
+    // {
+    //     self.game_id
+    // }
 
     pub fn resource_role<'a>(&'a self) -> &'a Role
     {

@@ -79,7 +79,7 @@ pub enum ErrorKind
 {
     NotGameOwner,
     NotGamePlayer,
-    UnknownPlayerId,
+    UnknownId,
     NoMatchingGame,
     NoSuchCharacter,
     InvalidStateAction,
@@ -215,7 +215,7 @@ mod tests
         let player_state = player_join_game(&game_input_channel, game_id).await;
 
         let (game_sender, game_receiver) = channel();
-        let msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame(player_state.player_id)};
+        let msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame};
 
         if let Err(_) = game_input_channel.send(msg).await 
         {
@@ -250,14 +250,14 @@ mod tests
         let NewPlayer {player_id: player_1_id, player_1_receiver: mut player_1_channel} 
             = player_join_game(&game_input_channel, game_id).await;
         let (mut game_sender, mut game_receiver) = channel();
-        let mut msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame(player_1_id)};
+        let mut msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame};
 
         assert!(game_input_channel.send(msg).await.is_ok() );
         assert!(game_receiver.await.is_ok());
 
         let player_state = player_join_game(&game_input_channel, game_id).await;
         (game_sender, game_receiver) = channel();
-        msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame(player_state.player_id)};
+        msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame};
 
         assert!(game_input_channel.send(msg).await.is_ok());
         assert!(game_receiver.await.is_ok());
@@ -472,12 +472,12 @@ mod tests
         };
 
         (game_sender, game_receiver) = channel::<Outcome>();
-        msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame(mork_id)};
+        msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame};
         assert!(game_input_channel.send(msg).await.is_ok());
         assert!(game_receiver.await.is_ok());
 
         (game_sender, game_receiver) = channel::<Outcome>();
-        msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame(melf_id)};
+        msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame};
         assert!(game_input_channel.send(msg).await.is_ok());
         assert!(game_receiver.await.is_ok());
 
