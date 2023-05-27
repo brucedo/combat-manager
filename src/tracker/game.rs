@@ -94,7 +94,7 @@ impl Game {
         self.current_state.to_string()
     }
 
-    pub fn waiting_for(self: &mut Game)->Option<Vec<Uuid>>
+    pub fn waiting_for(self: &Game)->Option<Vec<Uuid>>
     {
         if self.current_state != State::ActionRound
         {
@@ -106,15 +106,22 @@ impl Game {
 
         for uuid in &self.current_turn_id
         {
-            match self.combatant_data.entry(*uuid) {
-                std::collections::hash_map::Entry::Occupied(entry) => {
-                    if !entry.get().has_resolved
-                    {
-                        blockers.push(*uuid);
-                    }
-                },
-                std::collections::hash_map::Entry::Vacant(_) => {unreachable!()},
+            match self.combatant_data.get(uuid)
+            {
+                Some(data) => {
+                    if !data.has_resolved {blockers.push(*uuid)}
+                }
+                None => unreachable!()
             }
+            // match self.combatant_data.entry(*uuid) {
+            //     std::collections::hash_map::Entry::Occupied(entry) => {
+            //         if !entry.get().has_resolved
+            //         {
+            //             blockers.push(*uuid);
+            //         }
+            //     },
+            //     std::collections::hash_map::Entry::Vacant(_) => {unreachable!()},
+            // }
         }
 
         if blockers.len() > 0
