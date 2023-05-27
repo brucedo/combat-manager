@@ -882,7 +882,7 @@ impl State {
     }
 }
 
-#[derive(Eq, Hash, PartialEq, Debug)]
+#[derive(Eq, Hash, PartialEq, Debug, Clone, Copy)]
 pub enum ActionType {
     Free = 0,
     Simple = 1,

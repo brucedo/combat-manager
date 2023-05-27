@@ -166,19 +166,19 @@ pub fn dispatch_message(registry: &mut GameRegistry, authority: &Authority) -> (
             debug!("Request is to begin the initiative phase.");
             (try_initiative_phase(registry, authority), None)
         },
-        // Request::StartCombatRound => {
-        //     debug!("Request is to begin a combat round.");
-        //     find_game_and_act( registry, game_id, try_begin_combat)
-        // },
-        // Request::TakeAction(action) =>
-        // {
-        //     debug!("Request is for some character to perform some action.");
-        //     find_game_and_act( registry, game_id, | game | {take_action(game, action)})
-        // }
-        // Request::AdvanceTurn => {
-        //     debug!("Request is to advance to the next event in the pass.");
-        //     find_game_and_act( registry, game_id, try_advance_turn)
-        // }
+        Request::StartCombatRound => {
+            debug!("Request is to begin a combat round.");
+            (try_begin_combat( registry, authority), None)
+        },
+        Request::TakeAction(action) =>
+        {
+            debug!("Request is for some character to perform some action.");
+            (take_action( registry, action, authority), None)
+        }
+        Request::AdvanceTurn => {
+            debug!("Request is to advance to the next event in the pass.");
+            (try_advance_turn( registry, authority), None)
+        }
         // Request::WhoGoesThisTurn => {
         //     debug!("Request is to see who is going this turn.");
         //     find_game_and_act(registry, game_id, list_current_turn_events)
@@ -653,32 +653,47 @@ fn add_init_roll(roll: &Roll, authority: &Authority, registry: &GameRegistry) ->
 
 }
 
-fn try_begin_combat(game: &mut Game) -> Outcome
+fn try_begin_combat(registry: &mut GameRegistry, authority: &Authority) -> Outcome
 {
     
-    let response: Outcome;
-
-    if let Err(err) = game.start_combat_rounds()
+    match authority.resource_role()
     {
-        match err.kind
-        {
-            crate::tracker::game::ErrorKind::InvalidStateAction => {
-                response = Outcome::Error(Error{ message: err.msg, kind: ErrorKind::InvalidStateAction })
-            },
-            _ => {unreachable!()}
+        Role::RoleGM(_, game_id) => {
+            
+
+            let Some(game) = registry.get_mut_game(game_id) 
+            else {return Outcome::Error(Error {message: String::from("The game ID does not resolve to a running game."), kind: ErrorKind::NoMatchingGame})};
+            if let Err(err) = game.start_combat_rounds()
+            {
+                match err.kind
+                {
+                    crate::tracker::game::ErrorKind::InvalidStateAction => {
+                        Outcome::Error(Error{ message: err.msg, kind: ErrorKind::InvalidStateAction })
+                    },
+                    _ => {unreachable!()}
+                }
+            }
+            else 
+            {
+                Outcome::CombatRoundStarted
+            }
         }
+        _ => Outcome::Error(Error {message: String::from("Only the game's GM may initiate combat."), kind: ErrorKind::UnauthorizedAction})
     }
-    else 
-    {
-        response = Outcome::CombatRoundStarted;    
-    }
-
-    return response;
 }
 
-pub fn try_advance_turn(game: &mut Game) -> Outcome
+pub fn try_advance_turn(registry: &mut GameRegistry, authority: &Authority) -> Outcome
 {
     let response: Outcome;
+
+    let game = match authority.resource_role() {
+        Role::RoleGM(_, game_id) => {
+            let Some(game) = registry.get_mut_game(game_id)
+            else { return Outcome::Error(Error {message: String::from("The game ID does not resolve to a running game."), kind: ErrorKind::UnknownId})};
+            game
+        }
+        _ => return Outcome::Error(Error { message: String::from("Only the game's GM may advance the turn."), kind: ErrorKind::UnauthorizedAction })
+    };
 
     if let Err(err) = game.advance_round()
     {
@@ -701,17 +716,31 @@ pub fn try_advance_turn(game: &mut Game) -> Outcome
     }
     else
     {
-        // let up = match game.waiting_for(){ Some(filled) => filled, None => Vec::<Uuid>::new() };
-        // let on_deck = match game.on_deck(){ Some(filled) => filled, None => Vec::<Uuid>::new() };
-
         response = Outcome::TurnAdvanced;
     }
 
     return response;
 }
 
-fn take_action(game: &mut Game, action: Action) -> Outcome
+fn take_action(registry: &mut GameRegistry, action: &Action, authority: &Authority) -> Outcome
 {
+
+    let (game, game_id, player_id) = match authority.resource_role() 
+    {
+        Role::RoleGM(player_id, game_id) | Role::RolePlayer(player_id, game_id) => {
+            if registry.player_chars(game_id, player_id).map_or(false, |chars| chars.contains(&action.character_id))
+            {
+                let Some(game) = registry.get_mut_game(game_id)
+                else {return Outcome::Error(Error {message: String::from("The game ID does not resolve to a running game."), kind: ErrorKind::NoMatchingGame})};
+                (game, game_id, player_id)
+            }
+            else {
+                return Outcome::Error(Error {message: String::from("Only the owner of a character may take an action for it."), kind: ErrorKind::UnauthorizedAction});
+            }
+        }
+        _ => return Outcome::Error(Error{message: String::from("Unregistered or observing players have no character to act on."), kind: ErrorKind::UnauthorizedAction})
+    };
+
     match game.take_action(action.character_id, action.action)
     {
         Ok(_) => 
