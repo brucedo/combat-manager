@@ -87,7 +87,8 @@ pub enum ErrorKind
     NoActionLeft,
     NotCharactersTurn,
     NoEventsLeft,
-    UnresolvedCombatant,
+    UnresolvedCombatant, 
+    UnauthorizedAction,
 }
 
 #[cfg(test)]

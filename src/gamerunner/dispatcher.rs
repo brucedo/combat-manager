@@ -136,38 +136,36 @@ pub fn dispatch_message(registry: &mut GameRegistry, authority: &Authority) -> (
         Request::AddCharacter(character) => {
             debug!("Request is to add a new character.");
             (add_character(character, registry, authority), None)
-            // find_game_and_act(authority, registry, | game, authority | {add_character(&character, game, authority)})
         },
         Request::GetFullCast => {
             debug!("Request is to get the full cast list.");
-            find_game_and_act(authority, registry, get_full_cast)
+            (get_full_cast(registry, authority), None)
         },
         Request::GetNpcCast => {
             debug!("Request is to get the NPC cast list.");
-            find_game_and_act(authority, registry, get_npcs)
+            (get_npcs(registry, authority), None)
         },
         Request::GetPcCast => {
             debug!("Reqeust is to get the PC cast list.");
-            find_game_and_act(authority, registry, get_pcs)
+            (get_pcs(registry, authority), None)
         }
         Request::GetCharacter(id) => {
             debug!("Request is to get a character by id.");
             (get_char(id, registry, authority), None)
-            // find_game_and_act(authority, registry, |game, authority| {get_char(id, registry, authority)})
         }
         Request::StartCombat(combatants) => {
-            debug!("Request is to start the combat phase.");                
-            find_game_and_act(authority, registry, | game, authority | {start_combat(combatants.to_owned(), authority, game)})
+            debug!("Request is to start the combat phase.");
+            (start_combat(registry, combatants.to_owned(), authority), None)
+
         },
         Request::AddInitiativeRoll(roll) => {
             debug!("Request is to add an initiative roll.");
             (add_init_roll(roll, authority, registry), None)
-            // find_game_and_act(authority, registry, | game, authority| { add_init_roll(roll, authority, game)})
         },
-        // Request::BeginInitiativePhase => {
-        //     debug!("Request is to begin the initiative phase.");
-        //     find_game_and_act(registry, game_id, try_initiative_phase)
-        // },
+        Request::BeginInitiativePhase => {
+            debug!("Request is to begin the initiative phase.");
+            (try_initiative_phase(registry, authority), None)
+        },
         // Request::StartCombatRound => {
         //     debug!("Request is to begin a combat round.");
         //     find_game_and_act( registry, game_id, try_begin_combat)
@@ -331,30 +329,30 @@ fn join_game(authority: &Authority, game_directory: &mut GameRegistry) -> (Outco
     }
 }
 
-fn find_game_and_act<F>(authority: &Authority, running_games: &mut GameRegistry, action: F) -> (Outcome, Option<HashSet<PlayerId>>)
-where
-    F: FnOnce(&mut Game, &Authority) -> Outcome
-{
-    let response: Outcome;
+// fn find_game_and_act<F>(authority: &Authority, running_games: &mut GameRegistry, action: F) -> (Outcome, Option<HashSet<PlayerId>>)
+// where
+//     F: FnOnce(&mut Game, &Authority) -> Outcome
+// {
+//     let response: Outcome;
     
-    if let Some(game_id) = authority.game_id()
-    {
-        match running_games.get_mut_game(game_id)
-        {
-            Some(mut game) => 
-            {
-                response = action(&mut game, authority);
-            },
-            None => {response = game_not_found(game_id)},
-        }
-    }
-    else
-    {
-        response = Outcome::Error(Error {message: String::from("Game ID field left empty - action cannot be taken."), kind: ErrorKind::InvalidStateAction})
-    }
+//     if let Some(game_id) = authority.game_id()
+//     {
+//         match running_games.get_mut_game(game_id)
+//         {
+//             Some(mut game) => 
+//             {
+//                 response = action(&mut game, authority);
+//             },
+//             None => {response = game_not_found(game_id)},
+//         }
+//     }
+//     else
+//     {
+//         response = Outcome::Error(Error {message: String::from("Game ID field left empty - action cannot be taken."), kind: ErrorKind::InvalidStateAction})
+//     }
 
-    return (response, None);
-}
+//     return (response, None);
+// }
 
 fn game_not_found(id: Uuid) -> Outcome
 {
@@ -373,9 +371,16 @@ fn add_character(character: &Character, registry: &mut GameRegistry, authority: 
     match authority.resource_role()
     {
         Role::RolePlayer(player_id, game_id) | Role::RoleGM(player_id, game_id) => {
+            if let Some(game) = registry.get_mut_game(game_id)
+            {
+                let char_id = game.add_cast_member((*character).clone());
+                return Outcome::CharacterAdded((*game_id, char_id));
+            }
+            else
+            {
+                Outcome::Error(Error {message: String::from("The game ID does not resolve to a running game."), kind: ErrorKind::UnknownId})
+            }
             
-            let char_id = registry.add_cast_member((*character).clone());
-            return Outcome::CharacterAdded((game_id, char_id));
         }, 
         _ => {
             return Outcome::Error(Error { message: String::from("Observers may not create characters in a game."), kind: ErrorKind::InvalidStateAction })
@@ -384,36 +389,57 @@ fn add_character(character: &Character, registry: &mut GameRegistry, authority: 
     
 }
 
-fn get_full_cast(game: &mut Game, authority: &Authority) -> Outcome
+fn get_full_cast(registry: &mut GameRegistry, authority: &Authority) -> Outcome
 {
     match authority.resource_role()
     {
-        Role::RoleGM => {
-            Outcome::CastList(game.get_cast())
+        Role::RoleGM(_, game_id) => {
+            if let Some(game) = registry.get_game(game_id)
+            {
+                Outcome::CastList(game.get_cast())
+            }
+            else
+            {
+                Outcome::Error(Error { message: String::from("The game identifier provided does not resolve to a running game."), kind: ErrorKind::UnknownId})
+            }
         }
         _ => Outcome::Error(Error { message: String::from("Only GMs may request the full character roster."), kind: ErrorKind::InvalidStateAction })
     }
     
 }
 
-fn get_npcs(game: &mut Game, authority: &Authority) -> Outcome
+fn get_npcs(registry: &mut GameRegistry, authority: &Authority) -> Outcome
 {
     match authority.resource_role() 
     {
-        Role::RoleGM => {
-            Outcome::CastList(game.get_npcs())
+        Role::RoleGM(_, game_id) => {
+            if let Some(game) = registry.get_game(game_id)
+            {
+                Outcome::CastList(game.get_npcs())
+            }
+            else
+            {
+                Outcome::Error( Error { message: String::from("The game identifier provided does not resolve to a running game."), kind: ErrorKind::UnknownId})
+            }
         }
         _ => Outcome::Error(Error {message: String::from("Only GMs may request the NPC character roster."), kind: ErrorKind::InvalidStateAction })
     }
     
 }
 
-fn get_pcs(game: &mut Game, authority: &Authority) -> Outcome
+fn get_pcs(registry: &mut GameRegistry, authority: &Authority) -> Outcome
 {
     match authority.resource_role()
     {
-        Role::RoleGM | Role::RolePlayer => {
-            Outcome::CastList(game.get_pcs())
+        Role::RoleGM(_, game_id) | Role::RolePlayer(_, game_id) => {
+            if let Some(game) = registry.get_game(game_id)
+            {
+                Outcome::CastList(game.get_pcs())
+            }
+            else
+            {
+                Outcome::Error( Error { message: String::from("The game identifier provided does not resolve to a running game."), kind: ErrorKind::UnknownId})
+            }
         }
         _ => Outcome::Error(Error {message: String::from("Only active participants in the game may get the player roster."), kind: ErrorKind::InvalidStateAction })
     }
@@ -424,9 +450,9 @@ fn get_char(char_id: &CharacterId, registry: &GameRegistry, authority: &Authorit
 {
     
 
-    match (authority.resource_role(), authority.game_id(), authority.player_id())
+    match authority.resource_role()
     {
-        (Role::RolePlayer, Some(game_id), Some(player_id)) =>
+        Role::RolePlayer(player_id, game_id) =>
         {
             match registry.get_game(&game_id)
             {
@@ -446,7 +472,7 @@ fn get_char(char_id: &CharacterId, registry: &GameRegistry, authority: &Authorit
                 }
             }
         }
-        (Role::RoleGM, Some(game_id), _) =>
+        Role::RoleGM(_, game_id) =>
         {
             match registry.get_game(&game_id)
             {
@@ -461,34 +487,41 @@ fn get_char(char_id: &CharacterId, registry: &GameRegistry, authority: &Authorit
     }
 }
 
-fn start_combat(combatants: Vec<CharacterId>, authority: &Authority, game: &mut Game) -> Outcome
+fn start_combat(game_registry: &mut GameRegistry, combatants: Vec<CharacterId>, authority: &Authority) -> Outcome
 {
 
     let response: Outcome;
 
     match authority.resource_role()
     {
-        Role::RoleGM => {
-            if let Err(result) = game.add_combatants(combatants)
+        Role::RoleGM(_, game_id) => {
+            if let Some(game) = game_registry.get_mut_game(game_id)
             {
-                match result.kind
+                if let Err(result) = game.add_combatants(combatants)
                 {
-                    crate::tracker::game::ErrorKind::UnknownCastId => {
-                        response = Outcome::Error
-                        (
-                            Error 
-                            { 
-                                message: result.msg, 
-                                kind: ErrorKind::NoSuchCharacter 
-                            }
-                        );
-                    },
-                    _ => {unreachable!()},
+                    match result.kind
+                    {
+                        crate::tracker::game::ErrorKind::UnknownCastId => {
+                            response = Outcome::Error
+                            (
+                                Error 
+                                { 
+                                    message: result.msg, 
+                                    kind: ErrorKind::NoSuchCharacter 
+                                }
+                            );
+                        },
+                        _ => {unreachable!()},
+                    }
+                }
+                else 
+                {
+                    response = Outcome::CombatStarted;
                 }
             }
-            else 
+            else
             {
-                response = Outcome::CombatStarted;
+                response = Outcome::Error(Error { message: String::from("Provided ID does not map to a running game."), kind: ErrorKind::UnknownId});
             }
         },
         _ => {response = Outcome::Error(Error { message: String::from("Only the Game GM may initiate combat."), kind: ErrorKind::NotGameOwner })}
@@ -498,38 +531,54 @@ fn start_combat(combatants: Vec<CharacterId>, authority: &Authority, game: &mut 
 
 }
 
-fn try_initiative_phase(game: &mut Game) -> Outcome
+fn try_initiative_phase(registry: &mut GameRegistry, authority: &Authority) -> Outcome
 {
     let response: Outcome;
 
-    match game.start_initiative_phase()
+    match authority.resource_role()
     {
-        Ok(_) => {
-            debug!("Non-error returned from game.start_initiative_phase()");
-            response = Outcome::InitiativePhaseStarted;
-        },
-        Err(game_err) => {
-            let runner_err: Error;
-            match game_err.kind
+        Role::RoleGM(_, game_id) => {
+            if let Some(game) = registry.get_mut_game(game_id)
             {
-                crate::tracker::game::ErrorKind::InvalidStateAction => 
+                match game.start_initiative_phase()
                 {
-                    runner_err = Error {kind: ErrorKind::InvalidStateAction, message: game_err.msg}
-                },
-                crate::tracker::game::ErrorKind::UnknownCastId => 
-                {
-                    runner_err = Error {kind: ErrorKind::NoSuchCharacter, message: game_err.msg}
+                    Ok(_) => {
+                        debug!("Non-error returned from game.start_initiative_phase()");
+                        response = Outcome::InitiativePhaseStarted;
+                    },
+                    Err(game_err) => {
+                        let runner_err: Error;
+                        match game_err.kind
+                        {
+                            crate::tracker::game::ErrorKind::InvalidStateAction => 
+                            {
+                                runner_err = Error {kind: ErrorKind::InvalidStateAction, message: game_err.msg}
+                            },
+                            crate::tracker::game::ErrorKind::UnknownCastId => 
+                            {
+                                runner_err = Error {kind: ErrorKind::NoSuchCharacter, message: game_err.msg}
+                            }
+                            crate::tracker::game::ErrorKind::UnresolvedCombatant => 
+                            {
+                                runner_err = Error {kind: ErrorKind::UnresolvedCombatant, message: game_err.msg}
+                            },
+                            _ => {unreachable!()}
+                        }
+                        error!("Error returned from game.start_initiative_phase()");
+                        response = Outcome::Error(runner_err);
+                    },
                 }
-                crate::tracker::game::ErrorKind::UnresolvedCombatant => 
-                {
-                    runner_err = Error {kind: ErrorKind::UnresolvedCombatant, message: game_err.msg}
-                },
-                _ => {unreachable!()}
             }
-            error!("Error returned from game.start_initiative_phase()");
-            response = Outcome::Error(runner_err);
+            else 
+            {
+                response = Outcome::Error(Error {message: String::from("The game ID does not resolve to a running game."), kind: ErrorKind::NoMatchingGame});
+            }
         },
+        _ => {
+            response = Outcome::Error(Error {message: String::from("Only the GM may begin initiative."), kind: ErrorKind::UnauthorizedAction})
+        }
     }
+    
 
     return response;
 }

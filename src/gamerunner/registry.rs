@@ -55,9 +55,9 @@ impl <'a> GameRegistry
         }
     }
 
-    pub fn get_mut_game(&'a mut self, id: Uuid) -> Option<&'a mut Game>
+    pub fn get_mut_game(&'a mut self, id: &Uuid) -> Option<&'a mut Game>
     {
-        if let Some(dir_entry) = self.games.get_mut(&id)
+        if let Some(dir_entry) = self.games.get_mut(id)
         {
             return Some(&mut dir_entry.game);
         }
@@ -313,7 +313,7 @@ pub mod tests
         registry.register_player(gm, gm_sender);
         registry.new_game(gm ,id, game);
 
-        assert!(registry.get_mut_game(id).is_some());
+        assert!(registry.get_mut_game(&id).is_some());
     }
 
     #[test]
@@ -323,7 +323,7 @@ pub mod tests
 
         let id = Uuid::new_v4();
 
-        assert!(registry.get_mut_game(id).is_none());
+        assert!(registry.get_mut_game(&id).is_none());
     }
 
     #[test]
