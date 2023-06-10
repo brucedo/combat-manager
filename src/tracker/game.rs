@@ -162,7 +162,7 @@ impl Game {
         }
     }
 
-    pub fn collect_all_remaining_events(self: &mut Game) -> Option<HashMap<i8, Vec<Uuid>>>
+    pub fn collect_all_remaining_events(self: & Game) -> Option<HashMap<i8, Vec<Uuid>>>
     {
         let events = self.init_tracker.get_ordered_inits();
 
@@ -273,7 +273,7 @@ impl Game {
         }
     }
 
-    pub fn get_all_remaining_initiatives(self: &mut Game) -> Option<Vec<i8>>
+    pub fn get_all_remaining_initiatives(self: & Game) -> Option<Vec<i8>>
     {
         let mut initiatives = Vec::<i8>::new();
 

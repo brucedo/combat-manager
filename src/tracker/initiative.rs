@@ -105,7 +105,7 @@ impl InitTracker {
         PassState::AcceptedRequest
     }
 
-    pub fn get_ordered_inits(&mut self) -> Vec::<(i8, Uuid)>
+    pub fn get_ordered_inits(& self) -> Vec::<(i8, Uuid)>
     {
         let mut ordering = Vec::<(i8, Uuid)>::new();
         ordering.reserve(self.initiatives.len());

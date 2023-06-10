@@ -187,26 +187,26 @@ pub fn dispatch_message(registry: &mut GameRegistry, authority: &Authority) -> (
             debug!("Request is to see who has yet to go.");
             (list_unresolved_events(registry, authority), None)
         }
-        // Request::WhatHappensNextTurn => {
-        //     debug!("Request is to see what happens next turn.");
-        //     find_game_and_act(registry, game_id, list_next_turn_events)
-        // }
-        // Request::AllEventsThisPass => {
-        //     debug!("Request is for a full accounting of all events on this pass.");
-        //     find_game_and_act(registry, game_id, list_all_events_by_id_this_pass)
-        // }
-        // Request::NextInitiative => {
-        //     debug!("Request is to get the next initiative number.");
-        //     find_game_and_act(registry, game_id, next_initiative)
-        // }
-        // Request::CurrentInitiative => {
-        //     debug!("Request is to get the current initiative number.");
-        //     find_game_and_act(registry, game_id, current_initiative)
-        // }
-        // Request::AllRemainingInitiatives => {
-        //     debug!("Request is to get any initiatives that have not been fully resolved.");
-        //     find_game_and_act(registry, game_id, remaining_initiatives_are)
-        // }
+        Request::WhatHappensNextTurn => {
+            debug!("Request is to see what happens next turn.");
+            (list_next_turn_events(registry, authority), None)
+        }
+        Request::AllEventsThisPass => {
+            debug!("Request is for a full accounting of all events on this pass.");
+            (list_all_events_by_id_this_pass(registry, authority), None)
+        }
+        Request::NextInitiative => {
+            debug!("Request is to get the next initiative number.");
+            (next_initiative(registry, authority), None)
+        }
+        Request::CurrentInitiative => {
+            debug!("Request is to get the current initiative number.");
+            (current_initiative(registry, authority), None)
+        }
+        Request::AllRemainingInitiatives => {
+            debug!("Request is to get any initiatives that have not been fully resolved.");
+            (remaining_initiatives_are(registry, authority), None)
+        }
         _ => {todo!()}
     }
 }
@@ -258,8 +258,6 @@ fn enumerate(running_games: &mut GameRegistry ) -> Outcome
 
 fn new_game(authority: &Authority, running_games: &mut GameRegistry) -> Outcome
 {
-    let response: Outcome;
-
     match authority.resource_role()
     {
         Role::RoleUnregistered => {
@@ -801,27 +799,86 @@ fn list_unresolved_events(registry: &GameRegistry, authority: &Authority) -> Out
     Outcome::MatchingEventsAre(game.waiting_for())
 }
 
-fn list_next_turn_events(game: &mut Game) -> Outcome
+fn list_next_turn_events(registry: &mut GameRegistry, authority: &Authority) -> Outcome
 {
-    Outcome::MatchingEventsAre(game.on_deck())
+    match authority.resource_role() {
+        Role::RoleGM(_, game_id) | Role::RolePlayer(_, game_id) | Role::RoleObserver(_, game_id) => 
+        {
+            let Some(game) = registry.get_game(game_id)
+            else { return Outcome::Error(Error {message: String::from("The game ID does not resolve to a running game."), kind: ErrorKind::NoMatchingGame}) };
+            Outcome::MatchingEventsAre(game.on_deck())
+        },
+        _ => 
+        {
+            return Outcome::Error(Error {message: String::from("Only registered players and observers may view game events."), kind: ErrorKind::UnauthorizedAction});
+        }
+    }
+    
 }
 
-fn list_all_events_by_id_this_pass(game: &mut Game) -> Outcome
+fn list_all_events_by_id_this_pass(registry: &mut GameRegistry, authority: &Authority) -> Outcome
 {
-    Outcome::MatchingEventsById(game.collect_all_remaining_events())
+    match authority.resource_role() {
+        Role::RoleGM(_, game_id) | Role::RolePlayer(_, game_id) | Role::RoleObserver(_, game_id) =>
+        {
+            let Some(game) = registry.get_game(game_id)
+            else { return Outcome::Error(Error {message: String::from("The game ID does not resolve to a running game."), kind: ErrorKind::NoMatchingGame}) };
+            Outcome::MatchingEventsById(game.collect_all_remaining_events())
+        }
+        _ => 
+        {
+            return Outcome::Error(Error {message: String::from("Only registered players and observers may view game events."), kind: ErrorKind::UnauthorizedAction});
+        }
+    }
+    
 }
 
-fn next_initiative(game: &mut Game) -> Outcome
+fn next_initiative(registry: &mut GameRegistry, authority: &Authority) -> Outcome
 {
-    Outcome::InitiativeIs(game.get_next_init())
+
+    match authority.resource_role() {
+        Role::RoleGM(_, game_id) | Role::RolePlayer(_, game_id) | Role::RoleObserver(_, game_id) =>
+        {
+            let Some(game) = registry.get_game(game_id)
+            else { return Outcome::Error(Error {message: String::from("The game ID does not resolve to a running game."), kind: ErrorKind::NoMatchingGame}) };
+            Outcome::InitiativeIs(game.get_next_init())
+        }
+        _ =>
+        {
+            return Outcome::Error(Error {message: String::from("Only registered players and observers may view game events."), kind: ErrorKind::UnauthorizedAction});
+        }
+    }
 }
 
-fn current_initiative(game: &mut Game) -> Outcome
+fn current_initiative(registry: &mut GameRegistry, authority: &Authority) -> Outcome
 {
-    Outcome::InitiativeIs(game.get_current_init())
+    match authority.resource_role() {
+        Role::RoleGM(_, game_id) | Role::RolePlayer(_, game_id) | Role::RoleObserver(_, game_id) =>
+        {
+            let Some(game) = registry.get_game(game_id)
+            else { return Outcome::Error(Error {message: String::from("The game ID does not resolve to a running game."), kind: ErrorKind::NoMatchingGame}) };
+            Outcome::InitiativeIs(game.get_current_init())
+        }
+        _ =>
+        {
+            return Outcome::Error(Error {message: String::from("Only registered players and observers may view game events."), kind: ErrorKind::UnauthorizedAction});
+        }
+    }
 }
 
-fn remaining_initiatives_are(game: &mut Game) -> Outcome
+fn remaining_initiatives_are(registry: &mut GameRegistry, authority: &Authority) -> Outcome
 {
-    Outcome::InitiativesAre(game.get_all_remaining_initiatives())
+    match authority.resource_role() {
+        Role::RoleGM(_, game_id) | Role::RolePlayer(_, game_id) | Role::RoleObserver(_, game_id) =>
+        {
+            let Some(game) = registry.get_game(game_id)
+            else { return Outcome::Error(Error {message: String::from("The game ID does not resolve to a running game."), kind: ErrorKind::NoMatchingGame}) };
+            Outcome::InitiativesAre(game.get_all_remaining_initiatives())
+        }
+        _ =>
+        {
+            return Outcome::Error(Error {message: String::from("Only registered players and observers may view game events."), kind: ErrorKind::UnauthorizedAction});
+        }
+    }
+    
 }

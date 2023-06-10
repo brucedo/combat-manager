@@ -114,6 +114,7 @@ mod tests
 
     use super::ErrorKind;
     use super::Message;
+    use super::PlayerId;
     use super::dispatcher::NewPlayer;
     use super::dispatcher::Roll;
 
@@ -133,7 +134,13 @@ mod tests
 
     pub async fn add_new_game(game_input_channel: &Sender<Message>) -> Uuid
     {
-        let (game_sender, game_receiver) = channel();
+        let gm = PlayerId::new_v4();
+
+        let (mut game_sender, mut game_receiver) = channel();
+        let msg = Message { player_id: Some(gm), game_id: None, reply_channel: game_sender, msg: Request::NewPlayer};
+        assert!(game_input_channel.send(msg).await.is_ok());
+
+        (game_sender, game_receiver) = channel();
         let msg = Message { player_id: None, game_id: Some(Uuid::new_v4()), reply_channel: game_sender, msg: Request::New };
 
         match game_input_channel.send(msg).await {
