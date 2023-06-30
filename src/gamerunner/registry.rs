@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use uuid::Uuid;
 
+use crate::tracker::character::Character;
 use crate::tracker::game::Game;
 
 use super::{WhatChanged, CharacterId};
@@ -258,7 +259,7 @@ impl <'a> GameRegistry
         self.games.contains_key(game_id)
     }
 
-    pub fn player_chars(&self, game_id: &GameId, player_id: &PlayerId) -> Option<&HashSet<CharacterId>>
+    pub fn characters_by_player(&self, game_id: &GameId, player_id: &PlayerId) -> Option<&HashSet<CharacterId>>
     {
         match self.players.get(player_id)
         {
@@ -267,6 +268,16 @@ impl <'a> GameRegistry
             },
             None => None,
         }
+    }
+
+    pub fn add_character(&mut self, player_id: &PlayerId, game_id: &GameId, character: Character) -> Option<&CharacterId>
+    {
+
+    }
+
+    pub fn players_by_character(&self, game_id: &GameId, char_id: &CharacterId) -> Option<&PlayerId>
+    {
+
     }
 
     pub fn is_gm(&self, player_id: &PlayerId, game_id: &GameId) -> bool
@@ -291,7 +302,7 @@ pub mod tests
     use tokio::sync::mpsc::channel;
     use uuid::Uuid;
 
-    use crate::{tracker::game::Game, gamerunner::{WhatChanged, PlayerId}};
+    use crate::{tracker::{game::Game, character::Character}, gamerunner::{WhatChanged, PlayerId, CharacterId}};
 
     use super::GameRegistry;
 
@@ -440,6 +451,72 @@ pub mod tests
         player_comms.send(Arc::new(crate::gamerunner::WhatChanged::CombatEnded)).await;
 
         assert!(receiver.recv().await.is_some());
+    }
+
+    #[test]
+    pub fn a_player_may_add_a_character_to_a_game()
+    {
+        init();
+        let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
+        let game_1 = Uuid::new_v4();
+
+        let player_1 = Uuid::new_v4();
+        let (player_sender, _) = channel(32);
+        let mork = Character::new_pc(crate::tracker::character::Metatypes::Orc, String::from("Orcifer"));
+
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_1, Game::new());
+        
+        registry.register_player(player_1, player_sender);
+        registry.join_game(player_1, game_1);
+    
+        let char_id: Option<&CharacterId> = registry.add_character(&player_1, &game_1, mork);
+
+        assert!(char_id.is_some());
+        assert_eq!(1, registry.get_game(&game_1).unwrap().cast_size());
+        assert!(registry.get_game(&game_1).unwrap().get_cast_by_id(&char_id.unwrap()).is_some());
+    }
+
+    #[test]
+    pub fn a_player_may_retrieve_their_character_ids_from_a_given_game()
+    {
+        init();
+        let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
+        let game_1 = Uuid::new_v4();
+        let game_2 = Uuid::new_v4();
+
+        let player_1 = Uuid::new_v4();
+        let (player_sender, _) = channel(32);
+        let dorf = Character::new_pc(crate::tracker::character::Metatypes::Dwarf, String::from("Dorf"));
+        let mork = Character::new_pc(crate::tracker::character::Metatypes::Orc, String::from("Mork"));
+
+        registry.register_player(gm, gm_sender);
+        registry.register_player(player_1, player_sender);
+
+        registry.new_game(gm, game_1, Game::new());
+        registry.new_game(gm, game_2, Game::new());
+
+        registry.join_game(player_1, game_1);
+        registry.join_game(player_1, game_2);
+
+        let dorf_id = registry.add_character(&player_1, &game_1, dorf);
+        let mork_id = registry.add_character(&player_1, &game_2, mork);
+
+        let mut chars = registry.characters_by_player(&game_1, &player_1);
+        assert!(chars.is_some());
+        assert!(chars.unwrap().contains(&dorf.id));
+        assert!(!chars.unwrap().contains(&mork.id));
+
+        chars = registry.characters_by_player(&game_2, &player_1);
+        assert!(chars.is_some());
+        assert!(!chars.unwrap().contains(&dorf_id.unwrap()));
+        assert!(chars.unwrap().contains(&mork_id.unwrap()));
     }
 
     #[test]
