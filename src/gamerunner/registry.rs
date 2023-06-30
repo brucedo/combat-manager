@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::Entry as MapEntry;
+use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use uuid::Uuid;
 
@@ -16,7 +17,7 @@ pub struct PlayerDirectoryEntry
     pub player_name: String,
     pub player_games: HashSet<Uuid>,
     pub player_characters: HashSet<Uuid>,
-    pub player_sender: Sender<WhatChanged>
+    pub player_sender: Sender<Arc<WhatChanged>>
 }
 
 pub struct GameDirectoryEntry
@@ -74,7 +75,7 @@ impl <'a> GameRegistry
         Some(&entry.game)
     }
 
-    pub fn register_player(&mut self, player_id: Uuid, player_comm_channel: Sender<WhatChanged>) -> Result<(), ()>
+    pub fn register_player(&mut self, player_id: Uuid, player_comm_channel: Sender<Arc<WhatChanged>>) -> Result<(), ()>
     {
         match self.players.entry(player_id)
         {
@@ -111,7 +112,7 @@ impl <'a> GameRegistry
         }
     }
 
-    pub fn get_player_sender(&self, player_id: &Uuid) -> Option<Sender<WhatChanged>>
+    pub fn get_player_sender(&self, player_id: &Uuid) -> Option<Sender<Arc<WhatChanged>>>
     {
         if let Some(players) = self.players.get(&player_id)
         {
@@ -285,7 +286,7 @@ impl <'a> GameRegistry
 #[cfg(test)]
 pub mod tests
 {
-    use std::{collections::HashSet, ops::RemAssign};
+    use std::{collections::HashSet, ops::RemAssign, sync::Arc};
 
     use tokio::sync::mpsc::channel;
     use uuid::Uuid;
@@ -436,7 +437,7 @@ pub mod tests
         let player_comms = registry.get_player_sender(&player_id).unwrap();
         
         
-        player_comms.send(crate::gamerunner::WhatChanged::CombatEnded).await;
+        player_comms.send(Arc::new(crate::gamerunner::WhatChanged::CombatEnded)).await;
 
         assert!(receiver.recv().await.is_some());
     }

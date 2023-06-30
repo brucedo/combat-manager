@@ -1,10 +1,12 @@
+use std::sync::Arc;
+
 use log::{debug, error};
 use tokio::sync::mpsc::{Receiver, Sender as MpscSender};
 use uuid::Uuid;
 
 use crate::gamerunner::{registry::GameRegistry, authority::authorize};
-use notifier::{into_notification, notify_players, WhatChanged};
-use dispatcher::dispatch_message;
+use notifier::{/*into_notification, notify_players,*/ WhatChanged};
+use dispatcher::dispatch_message2;
 
 use self::dispatcher::Message;
 
@@ -27,10 +29,16 @@ pub async fn game_runner(mut message_queue: Receiver<Message>)
         let mut_directory = &mut directory;
         let authority = authorize(player_id_opt, game_id_opt, request, mut_directory);
         // let (channel, game_id) = (message.reply_channel, message.game_id);
-        let (response, to_notify) = dispatch_message(mut_directory, &authority);
+        let (response, notify_opt) = dispatch_message2(mut_directory, &authority);
 
-        // if let Some(notification) = into_notification(&directory,&response, &game_id, todo!())
-        // {
+        if let Some(notification) = notify_opt // = into_notification(&directory,&response, &authority)
+        {
+            let (message, sender_list) = (notification.change_type, notification.send_to);
+
+            for sender in sender_list
+            {
+                sender.send(message.clone()).await;
+            }
         //     if let Some(players) = to_notify
         //     {
         //         let senders: Vec<MpscSender<WhatChanged>> = players.iter()
@@ -47,7 +55,7 @@ pub async fn game_runner(mut message_queue: Receiver<Message>)
         //             notify_players(notification, &senders).await;
         //         }
         //     }
-        // }
+        }
 
         if channel.send(response).is_err()
         {
@@ -112,7 +120,9 @@ mod tests
     use crate::tracker::game::ActionType;
     use crate::gamerunner::WhatChanged;
 
+    use super::CharacterId;
     use super::ErrorKind;
+    use super::GameId;
     use super::Message;
     use super::PlayerId;
     use super::dispatcher::NewPlayer;
@@ -132,16 +142,17 @@ mod tests
         return sender;
     }
 
-    pub async fn add_new_game(game_input_channel: &Sender<Message>) -> Uuid
+    pub async fn add_new_game(game_input_channel: &Sender<Message>) -> (PlayerId, GameId)
     {
         let gm = PlayerId::new_v4();
 
         let (mut game_sender, mut game_receiver) = channel();
         let msg = Message { player_id: Some(gm), game_id: None, reply_channel: game_sender, msg: Request::NewPlayer};
         assert!(game_input_channel.send(msg).await.is_ok());
+        assert!(game_receiver.await.is_ok());
 
         (game_sender, game_receiver) = channel();
-        let msg = Message { player_id: None, game_id: Some(Uuid::new_v4()), reply_channel: game_sender, msg: Request::New };
+        let msg = Message { player_id: Some(gm), game_id: Some(Uuid::new_v4()), reply_channel: game_sender, msg: Request::New };
 
         match game_input_channel.send(msg).await {
             Ok(_) => {
@@ -150,7 +161,7 @@ mod tests
                     Ok(game_msg) => {
                         match game_msg
                         {
-                            Outcome::Created(id) => {return id},
+                            Outcome::Created(id) => {return (gm, id)},
                             _ => {panic!("Received a ResponseMessage enum of an unexpected type.")}
                         }
                     },
@@ -191,7 +202,7 @@ mod tests
     {
         let game_input_channel = init();
         let (game_sender, game_receiver) = channel();
-        let game_id = add_new_game(&game_input_channel).await;
+        let (gm_id, game_id) = add_new_game(&game_input_channel).await;
 
         let msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::NewPlayer};
 
@@ -218,7 +229,7 @@ mod tests
     pub async fn when_a_new_player_joins_a_game_they_receive_a_game_state_return_value()
     {
         let game_input_channel = init();
-        let game_id = add_new_game(&game_input_channel).await;
+        let (gm_id, game_id) = add_new_game(&game_input_channel).await;
 
         let player_state = player_join_game(&game_input_channel, game_id).await;
 
@@ -253,7 +264,7 @@ mod tests
         init();
 
         let game_input_channel = init();
-        let game_id = add_new_game(&game_input_channel).await;
+        let (gm_id, game_id) = add_new_game(&game_input_channel).await;
 
         let NewPlayer {player_id: player_1_id, player_1_receiver: mut player_1_channel} 
             = player_join_game(&game_input_channel, game_id).await;
@@ -274,7 +285,7 @@ mod tests
         {
             Some(msg) =>
             {
-                if let WhatChanged::NewPlayer(_name) = msg {}
+                if let WhatChanged::NewPlayer(_name) = msg.as_ref() {}
                 else {panic!("Wrong message type for notification.")}
             }
             None => {panic!("Should have received a WhatsChanged message.")}
@@ -297,13 +308,22 @@ mod tests
         
     }
 
-    async fn create_and_add_char(game_input_channel: &Sender<Message>, game_id: Uuid) -> Uuid
+    async fn create_and_add_char(game_input_channel: &Sender<Message>, game_id: Uuid) -> (PlayerId, CharacterId)
     {
-        let (game_sender, game_receiver) = channel::<Outcome>();
+        let (mut game_sender, mut game_receiver) = channel::<Outcome>();
+        let player_id = Uuid::new_v4();
 
+        let mut msg = Message {player_id: Some(player_id), game_id: None, reply_channel: game_sender, msg: Request::NewPlayer};
+        assert!(game_input_channel.send(msg).await.is_ok());
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+        msg = Message {player_id: Some(player_id), game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame};
+        assert!(game_input_channel.send(msg).await.is_ok());
+
+        (game_sender, game_receiver) = channel::<Outcome>();
         let character = create_character();
 
-        let msg = Message { player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::AddCharacter(character) };
+        msg = Message { player_id: Some(player_id), game_id: Some(game_id), reply_channel: game_sender, msg: Request::AddCharacter(character) };
         let send_state = game_input_channel.send(msg).await;
         assert!(send_state.is_ok());
 
@@ -315,7 +335,7 @@ mod tests
             Ok(msg) => {
                 match msg
                 {
-                    Outcome::CharacterAdded((game_id, character_id)) => {return character_id;}
+                    Outcome::CharacterAdded((game_id, character_id)) => {return (player_id, character_id);}
                     _ => {panic!("Attempt to add character for test failed.");}
                 }
             },
@@ -433,7 +453,7 @@ mod tests
         let (game_sender, game_receiver) = channel::<Outcome>();
 
         // when I send a Delete message with one half of a oneshot channel and a game ID that really exists...
-        let game_id = add_new_game(&game_input_channel).await;
+        let (gm_id, game_id) = add_new_game(&game_input_channel).await;
 
         let msg = Message { player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::Delete };
         
@@ -458,7 +478,7 @@ mod tests
 
         let (mut game_sender, mut game_receiver) = channel::<Outcome>();
 
-        let game_id = add_new_game(&game_input_channel).await;
+        let (gm_id, game_id) = add_new_game(&game_input_channel).await;
 
         let mut msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::NewPlayer};
         let mut send_state = game_input_channel.send(msg).await;
@@ -503,7 +523,7 @@ mod tests
             {
                 Ok(change_notice) => 
                 {
-                    match change_notice
+                    match change_notice.as_ref()
                     {
                         WhatChanged::GameEnded => {break;},
                         _ => {}
@@ -533,7 +553,7 @@ mod tests
             {
                 Ok(change_notice) =>
                 {
-                    match change_notice
+                    match change_notice.as_ref()
                     {
                         WhatChanged::GameEnded => {break;},
                         _ => {}
@@ -600,7 +620,7 @@ mod tests
         let game_input_channel = init();
         let (game_sender, game_receiver) = channel::<Outcome>();
 
-        let game_id = add_new_game(&game_input_channel).await;
+        let (gm_id, game_id) = add_new_game(&game_input_channel).await;
 
         let character = create_character();
 
@@ -654,12 +674,12 @@ mod tests
         let game_input_channel = init();
         let (game_sender, game_receiver) = channel::<Outcome>();
 
-        let game_id = add_new_game(&game_input_channel).await;
+        let (gm_id, game_id) = add_new_game(&game_input_channel).await;
 
-        let character1 = create_and_add_char(&game_input_channel, game_id).await;
-        let character2 = create_and_add_char(&game_input_channel, game_id).await;
-        let character3 = create_and_add_char(&game_input_channel, game_id).await;
-        let character4 = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, character1) = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, character2) = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, character3) = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, character4) = create_and_add_char(&game_input_channel, game_id).await;
 
         let combatants = vec![character1, character2, character3, character4];
 
@@ -689,12 +709,12 @@ mod tests
         let game_input_channel = init();
         let (game_sender, game_receiver) = channel::<Outcome>();
 
-        let game_id = add_new_game(&game_input_channel).await;
+        let (gm_id, game_id) = add_new_game(&game_input_channel).await;
 
-        let _character1 = create_and_add_char(&game_input_channel, game_id).await;
-        let _character2 = create_and_add_char(&game_input_channel, game_id).await;
-        let _character3 = create_and_add_char(&game_input_channel, game_id).await;
-        let _character4 = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, _character1) = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, _character2) = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, _character3) = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, _character4) = create_and_add_char(&game_input_channel, game_id).await;
 
         let combatants = vec![Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4()];
 
@@ -734,7 +754,7 @@ mod tests
         let game_input_channel = init();
         let (game_sender, _game_receiver) = channel::<Outcome>();
 
-        let game_id = add_new_game(&game_input_channel).await;
+        let (gm_id, game_id) = add_new_game(&game_input_channel).await;
 
         let msg = Message { player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::StartCombat(Vec::<Uuid>::new()) };
 
@@ -750,12 +770,12 @@ mod tests
         let game_input_channel = init();
         let (game_sender, game_receiver) = channel::<Outcome>();
 
-        let game_id = add_new_game(&game_input_channel).await;
+        let (gm_id, game_id) = add_new_game(&game_input_channel).await;
 
-        let character1 = create_and_add_char(&game_input_channel, game_id).await;
-        let character2 = create_and_add_char(&game_input_channel, game_id).await;
-        let character3 = create_and_add_char(&game_input_channel, game_id).await;
-        let character4 = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, character1) = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, character2) = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, character3) = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, character4) = create_and_add_char(&game_input_channel, game_id).await;
 
         let combatants = vec![character1, character2, character3, character4];
 
@@ -793,12 +813,12 @@ mod tests
         let game_input_channel = init();
         let (game_sender, _game_receiver) = channel::<Outcome>();
 
-        let game_id = add_new_game(&game_input_channel).await;
+        let (gm_id, game_id) = add_new_game(&game_input_channel).await;
 
-        let character1 = create_and_add_char(&game_input_channel, game_id).await;
-        let character2 = create_and_add_char(&game_input_channel, game_id).await;
-        let character3 = create_and_add_char(&game_input_channel, game_id).await;
-        let character4 = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, character1) = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, character2) = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, character3) = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, character4) = create_and_add_char(&game_input_channel, game_id).await;
         let combatants = vec![character1, character2, character3, character4];
 
         let msg = Message { player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::StartCombat(combatants) };
@@ -835,7 +855,7 @@ mod tests
         let game_input_channel = init();
         let (game_sender, _game_receiver ) = channel::<Outcome>();
 
-        let game_id = add_new_game(&game_input_channel).await;
+        let (gm_id, game_id) = add_new_game(&game_input_channel).await;
 
         let _character1 = create_and_add_char(&game_input_channel, game_id).await;
         let _character2 = create_and_add_char(&game_input_channel, game_id).await;
@@ -879,10 +899,10 @@ mod tests
         let game_input_channel = init();
         let (game_sender, _game_receiver) = channel::<Outcome>();
 
-        let game_id = add_new_game(&game_input_channel).await;
+        let (gm_id, game_id) = add_new_game(&game_input_channel).await;
 
-        let character1 = create_and_add_char(&game_input_channel, game_id).await;
-        let character2 = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, character1) = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, character2) = create_and_add_char(&game_input_channel, game_id).await;
 
         let msg = Message { player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::StartCombat(vec![character1, character2]) };
 
@@ -921,12 +941,12 @@ mod tests
         let game_input_channel = init();
         let (game_sender, _game_receiver) = channel::<Outcome>();
 
-        let game_id = add_new_game(&game_input_channel).await;
+        let (gm_id, game_id) = add_new_game(&game_input_channel).await;
 
-        let character1 = create_and_add_char(&game_input_channel, game_id).await;
-        let character2 = create_and_add_char(&game_input_channel, game_id).await;
-        let character3 = create_and_add_char(&game_input_channel, game_id).await;
-        let character4 = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, character1) = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, character2) = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, character3) = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, character4) = create_and_add_char(&game_input_channel, game_id).await;
         let combatants = vec![character1, character2, character3, character4];
 
         let msg = Message { player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::StartCombat(combatants.clone()) };
@@ -967,12 +987,12 @@ mod tests
         let game_input_channel = init();
         let (game_sender, _game_receiver) = channel::<Outcome>();
 
-        let game_id = add_new_game(&game_input_channel).await;
+        let (gm, game_id) = add_new_game(&game_input_channel).await;
 
-        let character1 = create_and_add_char(&game_input_channel, game_id).await;
-        let character2 = create_and_add_char(&game_input_channel, game_id).await;
-        let character3 = create_and_add_char(&game_input_channel, game_id).await;
-        let character4 = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, character1) = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, character2) = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, character3) = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, character4) = create_and_add_char(&game_input_channel, game_id).await;
         let combatants = vec![character1, character2, character3, character4];
 
         let msg = Message { player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::StartCombat(combatants.clone()) };
@@ -1110,8 +1130,8 @@ mod tests
             panic!("New game failed to generate an ID.");
         }
 
-        let character1 = create_and_add_char(&game_input_channel, game_id).await;
-        let character2 = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, character1) = create_and_add_char(&game_input_channel, game_id).await;
+        let (_, character2) = create_and_add_char(&game_input_channel, game_id).await;
 
         (game_sender, game_receiver) = channel::<Outcome>();
         msg = Message { player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::BeginInitiativePhase };

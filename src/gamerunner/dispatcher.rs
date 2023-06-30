@@ -1,13 +1,14 @@
 use std::{collections::{HashSet, HashMap}, sync::Arc};
 
-use tokio::sync::mpsc::{channel, Receiver};
+use rocket::http::hyper::request;
+use tokio::sync::mpsc::{channel, Sender, Receiver};
 use tokio::sync::oneshot::Sender as OneShotSender;
 use log::{debug, error};
 use uuid::Uuid;
 
 use crate::tracker::{game::{Game, ActionType}, character::Character};
 
-use super::{registry::GameRegistry, GameId, ErrorKind, Error, PlayerId, WhatChanged, authority::{Authority, Role}, CharacterId};
+use super::{registry::GameRegistry, GameId, ErrorKind, Error, PlayerId, WhatChanged, authority::{Authority, Role}, CharacterId, notifier::Notification};
 
 pub struct Message
 {
@@ -100,12 +101,38 @@ pub struct Action
 pub struct NewPlayer
 {
     pub player_id: Uuid,
-    pub player_1_receiver: Receiver<WhatChanged>
+    pub player_1_receiver: Receiver<Arc<WhatChanged>>
 }
 
 pub struct GameState
 {
     pub for_player: Uuid,
+}
+
+pub fn dispatch_message2(registry: &mut GameRegistry, authority: &Authority) -> (Outcome, Option<Notification>)
+{
+    let request = authority.request();
+
+    match request
+    {
+        Request::NewPlayer => {
+            debug!("Request is to register as a player.");
+            register_player2(authority, registry)
+        }
+        Request::Enumerate => {
+            debug!("Request is for a list of running games.");
+            (enumerate(registry), None)
+        }
+        Request::New => {
+            debug!("Request is for new game.");
+            (new_game(authority, registry), None)
+        },
+        Request::Delete => {
+            debug!("Request is to remove game.");
+            end_game2(authority, registry)
+        },
+        _ => (Outcome::Error(Error { message: String::from("Not Yet Implemented"), kind: ErrorKind::InvalidStateAction }), None)
+    }
 }
 
 pub fn dispatch_message(registry: &mut GameRegistry, authority: &Authority) -> (Outcome, Option<HashSet<Uuid>>)
@@ -211,6 +238,36 @@ pub fn dispatch_message(registry: &mut GameRegistry, authority: &Authority) -> (
     }
 }
 
+fn register_player2(authority: &Authority, player_directory: &mut GameRegistry) -> (Outcome, Option<Notification>)
+{
+    match authority.resource_role() 
+    {
+        Role::RoleUnregistered => {
+            let mut player_id = Uuid::new_v4();
+
+            while player_directory.is_registered(&player_id)
+            {
+                player_id = Uuid::new_v4();
+            }
+        
+            let (player_sender, player_receiver) = channel(32);
+            let player_info = NewPlayer{ player_id, player_1_receiver: player_receiver };   
+        
+            match player_directory.register_player(player_id, player_sender)
+            {
+                Ok(_) => {(Outcome::NewPlayer(player_info), None)},
+                Err(_) => {unreachable!("Duplicate ID encountered despite explicitly checking for duplicate ID before joining")}
+            }
+        },
+        _ => {
+            (Outcome::Error(Error { message: String::from("Player is already registered."), kind: ErrorKind::InvalidStateAction }), None)
+        }
+    }
+    
+
+    // return Outcome::NewPlayer(player_info);
+}
+
 fn register_player(authority: &Authority, player_directory: &mut GameRegistry) -> Outcome
 {
     match authority.resource_role() 
@@ -270,6 +327,38 @@ fn new_game(authority: &Authority, running_games: &mut GameRegistry) -> Outcome
         }
     }
 
+}
+
+fn end_game2(authority: &Authority, directory: &mut GameRegistry) -> (Outcome, Option<Notification>)
+{
+
+    match authority.resource_role()
+    {
+        Role::RoleGM(player_id, game_id) => 
+        {
+            match directory.delete_game(*game_id)
+            {
+                Ok(game_entry) => 
+                {
+                    let to_notify = game_entry.players;
+                    let senders: Vec<Sender<Arc<WhatChanged>>> = to_notify.iter().map(|player_id| directory.get_player_sender(player_id)).collect();
+                    // let notification = Notification { change_type: WhatChanged::GameEnded, send_to: todo!() }
+                    // let to_notify = directory.players_by_game(game);
+                    (Outcome::Destroyed, None)
+                },
+                Err(_) => 
+                {
+                    (Outcome::Error(
+                    Error{ message: String::from(format!("No game by ID {} exists.", game_id)), kind: ErrorKind::NoMatchingGame }), None)
+                }
+            }
+        }
+        _ => 
+        {
+            (Outcome::Error(Error { message: String::from("The action requested (Delete Game) may only be initiated by the game's GM."), kind: ErrorKind::NotGameOwner }), None)
+        }
+    }
+    
 }
 
 fn end_game(authority: &Authority, directory: &mut GameRegistry) -> (Outcome, Option<HashSet<Uuid>>)
