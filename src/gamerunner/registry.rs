@@ -16,8 +16,8 @@ pub struct PlayerDirectoryEntry
 {
     pub player_id: Uuid,
     pub player_name: String,
-    pub player_games: HashSet<Uuid>,
-    pub player_characters: HashSet<Uuid>,
+    pub player_games: HashSet<GameId>,
+    pub player_characters: HashMap<GameId, HashSet<CharacterId>>,
     pub player_sender: Sender<Arc<WhatChanged>>
 }
 
@@ -25,13 +25,13 @@ pub struct GameDirectoryEntry
 {
     pub game: Game,
     pub gm: Uuid,
-    pub players: HashSet<Uuid>,
+    pub players: HashSet<PlayerId>,
 }
 
 pub struct GameRegistry
 {
-    games: HashMap<Uuid, GameDirectoryEntry>,
-    players: HashMap<Uuid, PlayerDirectoryEntry>
+    games: HashMap<GameId, GameDirectoryEntry>,
+    players: HashMap<PlayerId, PlayerDirectoryEntry>
 }
 
 impl <'a> GameRegistry
@@ -57,7 +57,7 @@ impl <'a> GameRegistry
         }
     }
 
-    pub fn get_mut_game(&'a mut self, id: &Uuid) -> Option<&'a mut Game>
+    pub fn get_mut_game(&'a mut self, id: &GameId) -> Option<&'a mut Game>
     {
         if let Some(dir_entry) = self.games.get_mut(id)
         {
@@ -69,14 +69,14 @@ impl <'a> GameRegistry
         }
     }
 
-    pub fn get_game(&'a self, id: &Uuid) -> Option<&'a Game>
+    pub fn get_game(&'a self, id: &GameId) -> Option<&'a Game>
     {
         let entry = self.games.get(id)?;
 
         Some(&entry.game)
     }
 
-    pub fn register_player(&mut self, player_id: Uuid, player_comm_channel: Sender<Arc<WhatChanged>>) -> Result<(), ()>
+    pub fn register_player(&mut self, player_id: PlayerId, player_comm_channel: Sender<Arc<WhatChanged>>) -> Result<(), ()>
     {
         match self.players.entry(player_id)
         {
@@ -87,7 +87,7 @@ impl <'a> GameRegistry
                 {
                     player_name: String::from(""),  
                     player_id, player_games: HashSet::new(), 
-                    player_characters: HashSet::new(), 
+                    player_characters: HashMap::new(), 
                     player_sender: player_comm_channel 
                 });
                 Ok(())
@@ -95,7 +95,7 @@ impl <'a> GameRegistry
         }
     }
 
-    pub fn join_game(&mut self, player_id: Uuid, game_id: Uuid) -> Result<(), ()>
+    pub fn join_game(&mut self, player_id: PlayerId, game_id: GameId) -> Result<(), ()>
     {
         if self.games.contains_key(&game_id) && self.players.contains_key(&player_id)
         {
@@ -113,7 +113,7 @@ impl <'a> GameRegistry
         }
     }
 
-    pub fn get_player_sender(&self, player_id: &Uuid) -> Option<Sender<Arc<WhatChanged>>>
+    pub fn get_player_sender(&self, player_id: &PlayerId) -> Option<Sender<Arc<WhatChanged>>>
     {
         if let Some(players) = self.players.get(&player_id)
         {
@@ -125,17 +125,17 @@ impl <'a> GameRegistry
         }
     }
 
-    pub fn game_has_player(&self, game_id: &Uuid, player_id: &Uuid) -> bool
+    pub fn game_has_player(&self, game_id: &GameId, player_id: &PlayerId) -> bool
     {
         self.games.contains_key(game_id) && self.games.get(game_id).unwrap().players.contains(player_id)
     }
 
-    pub fn player_in_game(&self, player_id: Uuid, game_id: Uuid) -> bool
+    pub fn player_in_game(&self, player_id: PlayerId, game_id: GameId) -> bool
     {
         self.players.contains_key(&player_id) && self.players.get(&player_id).unwrap().player_games.contains(&game_id)
     }
 
-    pub fn games_by_player(&self, player_id: PlayerId) -> Option<&HashSet<Uuid>>
+    pub fn games_by_player(&self, player_id: PlayerId) -> Option<&HashSet<GameId>>
     {
         let player_entry = self.players.get(&player_id)?;
 
@@ -149,7 +149,7 @@ impl <'a> GameRegistry
         Some(player_entry.player_name.as_str())
     }
 
-    pub fn players_by_game(&self, game_id: &Uuid) -> Option<&HashSet<Uuid>>
+    pub fn players_by_game(&self, game_id: &GameId) -> Option<&HashSet<PlayerId>>
     {
         if self.games.contains_key(game_id)
         {
@@ -161,7 +161,7 @@ impl <'a> GameRegistry
         }
     }
 
-    pub fn leave_game(&mut self, player_id: Uuid, game_id: Uuid) -> Result<(), ()>
+    pub fn leave_game(&mut self, player_id: PlayerId, game_id: GameId) -> Result<(), ()>
     {
         match (self.games.entry(game_id), self.players.entry(player_id))
         {
@@ -182,7 +182,7 @@ impl <'a> GameRegistry
         }
     }
 
-    pub fn enumerate_games(&self) -> HashSet<Uuid>
+    pub fn enumerate_games(&self) -> HashSet<GameId>
     {
         let mut result = HashSet::new();
 
@@ -191,7 +191,7 @@ impl <'a> GameRegistry
         return result;
     }
 
-    pub fn enumerate_players(&self) -> HashSet<Uuid>
+    pub fn enumerate_players(&self) -> HashSet<PlayerId>
     {
         let mut result = HashSet::new();
 
@@ -200,7 +200,7 @@ impl <'a> GameRegistry
         return result;
     }
 
-    pub fn delete_game(&mut self, game_id: Uuid) -> Result<GameDirectoryEntry, ()>
+    pub fn delete_game(&mut self, game_id: GameId) -> Result<GameDirectoryEntry, ()>
     {
         if let Some(game) = self.games.remove(&game_id)
         {
@@ -223,7 +223,7 @@ impl <'a> GameRegistry
         }
     }
 
-    pub fn unregister_player(&mut self, player_id: Uuid) -> Result<(), ()>
+    pub fn unregister_player(&mut self, player_id: PlayerId) -> Result<(), ()>
     {
         if let Some(player) = self.players.remove(&player_id)
         {
@@ -249,12 +249,12 @@ impl <'a> GameRegistry
         }
     }
 
-    pub fn is_registered(&self, player_id: &Uuid) -> bool
+    pub fn is_registered(&self, player_id: &PlayerId) -> bool
     {
         self.players.contains_key(&player_id)
     }
 
-    pub fn is_game(&self, game_id:  &Uuid) -> bool
+    pub fn is_game(&self, game_id:  &GameId) -> bool
     {
         self.games.contains_key(game_id)
     }
@@ -264,7 +264,11 @@ impl <'a> GameRegistry
         match self.players.get(player_id)
         {
             Some(entry) => {
-                Some(&entry.player_characters)
+                match entry.player_characters.get(game_id)
+                {
+                    Some(characters) => Some(&characters),
+                    None => None,
+                }
             },
             None => None,
         }
@@ -272,12 +276,32 @@ impl <'a> GameRegistry
 
     pub fn add_character(&mut self, player_id: &PlayerId, game_id: &GameId, character: Character) -> Option<&CharacterId>
     {
+        if let Some(player_entry) = self.players.get(player_id)
+        {
+            let characters = player_entry.player_characters.get_mut(game_id).unwrap_or(&mut HashSet::<CharacterId>::new());
+            
 
+            if let Some(game) = self.games.get(game_id)
+            {
+                let character_id = game.game.add_cast_member(character);
+                characters.insert(character_id);
+                Some(&character_id)
+            }
+            else
+            {
+                None
+            }
+        }
+        else {
+            None
+        }
     }
 
     pub fn players_by_character(&self, game_id: &GameId, char_id: &CharacterId) -> Option<&PlayerId>
     {
-
+        self.players.iter().find(|p| 
+            p.1.player_characters.contains_key(game_id) && p.1.player_characters.get(game_id).unwrap().contains(char_id)
+        ).map(|p| p.0)   
     }
 
     pub fn is_gm(&self, player_id: &PlayerId, game_id: &GameId) -> bool
