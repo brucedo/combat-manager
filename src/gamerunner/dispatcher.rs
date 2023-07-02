@@ -6,7 +6,7 @@ use tokio::sync::oneshot::Sender as OneShotSender;
 use log::{debug, error};
 use uuid::Uuid;
 
-use crate::{tracker::{game::{Game, ActionType}, character::Character}};
+use crate::{tracker::{game::{Game, ActionType, GameError, ErrorKind as GameErrorKind}, character::Character}};
 
 use super::{registry::GameRegistry, GameId, ErrorKind, Error, PlayerId, WhatChanged, authority::{Authority, Role}, CharacterId, notifier::{Notification, PlayerJoined, NewCharacter}};
 
@@ -157,7 +157,7 @@ pub fn dispatch_message2(registry: &mut GameRegistry, authority: &Authority) -> 
         }
         Request::StartCombat(combatants) => {
             debug!("Request is to start the combat phase.");
-            (start_combat(registry, combatants.to_owned(), authority), None)
+            start_combat2(registry, combatants.to_owned(), authority)
 
         },
         Request::AddInitiativeRoll(roll) => {
@@ -594,13 +594,13 @@ fn add_character2(character: &Character, registry: &mut GameRegistry, authority:
                 {
                     Some(sender_list) => {
                         Some(
-                        Notification{ change_type: Arc::from(WhatChanged::NewCharacter(NewCharacter{ player_id: *player_id, character_id: *char_id, metatype: character.metatype })), 
+                        Notification{ change_type: Arc::from(WhatChanged::NewCharacter(NewCharacter{ player_id: *player_id, character_id: char_id, metatype: character.metatype })), 
                         send_to: sender_list })
                     },
                     None => {None}
                 };
 
-                (Outcome::CharacterAdded((*game_id, *char_id)), notification)
+                (Outcome::CharacterAdded((*game_id, char_id)), notification)
             }
             else 
             {
@@ -877,6 +877,42 @@ fn try_initiative_phase(registry: &mut GameRegistry, authority: &Authority) -> O
     
 
     return response;
+}
+
+fn add_init_roll2(roll: &Roll, authority: &Authority, registry: &mut GameRegistry) -> (Outcome, Option<Notification>)
+{
+
+    match authority.resource_role() 
+    {
+        Role::RoleGM(player_id, game_id) => 
+        {
+            if let Some(game) = registry.get_mut_game(game_id)
+            {
+                match game.accept_initiative_roll(roll.character_id, roll.roll)
+                {
+                    Ok(_) => {(Outcome::InitiativeRollAdded, None)},
+                    Err(GameError{kind: GameErrorKind::InvalidStateAction, ..}) => {
+                        (Outcome::Error(Error {message: String::from("The game is not in the initiatve state."), kind: ErrorKind::InvalidStateAction}), None)
+                    }
+                    Err(GameError{kind: GameErrorKind::UnknownCastId, ..}) => {
+                        (Outcome::Error(Error { message: String::from("The character ID provided is not registered as part of combat."), kind: ErrorKind::UnknownId }), None)
+                    }
+                    _ => {
+                        (Outcome::Error(Error { message: String::from("Unexpected error type returned from initiative add."), kind: ErrorKind::InvalidStateAction}), None)
+                    }
+                }
+
+                
+            }
+            else
+            {
+                return (Outcome::Error(Error { message: String::from("No game found by provided ID."), kind: ErrorKind::UnknownId }), None)
+            }
+        },
+        Role::RolePlayer(_, _) => todo!(),
+        _ => (Outcome::Error(Error { message: String::from("Only players and the GM may roll for initiative."), kind: ErrorKind::UnauthorizedAction}), None)
+    }
+
 }
 
 // fn add_init_roll(character_id: Uuid, roll: i8, game: &mut Game) -> Outcome

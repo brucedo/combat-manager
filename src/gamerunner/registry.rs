@@ -498,7 +498,7 @@ pub mod tests
         registry.register_player(player_1, player_sender);
         registry.join_game(player_1, game_1);
     
-        let char_id: Option<&CharacterId> = registry.add_character(&player_1, &game_1, mork);
+        let char_id: Option<CharacterId> = registry.add_character(&player_1, &game_1, mork);
 
         assert!(char_id.is_some());
         assert_eq!(1, registry.get_game(&game_1).unwrap().cast_size());
@@ -521,22 +521,22 @@ pub mod tests
         let dorf = Character::new_pc(crate::tracker::character::Metatypes::Dwarf, String::from("Dorf"));
         let mork = Character::new_pc(crate::tracker::character::Metatypes::Orc, String::from("Mork"));
 
-        registry.register_player(gm, gm_sender);
-        registry.register_player(player_1, player_sender);
+        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(player_1, player_sender).is_ok());
 
-        registry.new_game(gm, game_1, Game::new());
-        registry.new_game(gm, game_2, Game::new());
+        assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
+        assert!(registry.new_game(gm, game_2, Game::new()).is_ok());
 
-        registry.join_game(player_1, game_1);
-        registry.join_game(player_1, game_2);
+        assert!(registry.join_game(player_1, game_1).is_ok());
+        assert!(registry.join_game(player_1, game_2).is_ok());
 
         let dorf_id = registry.add_character(&player_1, &game_1, dorf);
         let mork_id = registry.add_character(&player_1, &game_2, mork);
 
         let mut chars = registry.characters_by_player(&game_1, &player_1);
         assert!(chars.is_some());
-        assert!(chars.unwrap().contains(&dorf.id));
-        assert!(!chars.unwrap().contains(&mork.id));
+        assert!(chars.unwrap().contains(&dorf_id.unwrap()));
+        assert!(!chars.unwrap().contains(&mork_id.unwrap()));
 
         chars = registry.characters_by_player(&game_2, &player_1);
         assert!(chars.is_some());

@@ -76,7 +76,7 @@ impl Game {
         return id;
     }
 
-    pub fn cast_size(self: &mut Game) -> usize
+    pub fn cast_size(self: &Game) -> usize
     {
         self.cast.len()
     }
