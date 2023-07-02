@@ -274,18 +274,19 @@ impl <'a> GameRegistry
         }
     }
 
-    pub fn add_character(&mut self, player_id: &PlayerId, game_id: &GameId, character: Character) -> Option<&CharacterId>
+    pub fn add_character(&mut self, player_id: &PlayerId, game_id: &GameId, character: Character) -> Option<CharacterId>
     {
-        if let Some(player_entry) = self.players.get(player_id)
+        if let Some(player_entry) = self.players.get_mut(player_id)
         {
-            let characters = player_entry.player_characters.get_mut(game_id).unwrap_or(&mut HashSet::<CharacterId>::new());
+            let mut temp = HashSet::<CharacterId>::new();
+            let characters = player_entry.player_characters.get_mut(game_id).unwrap_or(&mut temp);
             
 
-            if let Some(game) = self.games.get(game_id)
+            if let Some(game) = self.games.get_mut(game_id)
             {
                 let character_id = game.game.add_cast_member(character);
                 characters.insert(character_id);
-                Some(&character_id)
+                Some(character_id)
             }
             else
             {

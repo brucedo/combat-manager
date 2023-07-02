@@ -588,27 +588,24 @@ fn add_character2(character: &Character, registry: &mut GameRegistry, authority:
                     .map(|player_id| registry.get_player_sender(player_id)).filter(|opt| opt.is_some())
                     .map(|opt| opt.unwrap()).collect::<Vec<Sender<Arc<WhatChanged>>>>());
 
-            if let Some(game) = registry.get_mut_game(game_id)
+            if let Some(char_id) = registry.add_character(player_id, game_id, character.clone())
             {
-                let char_id = game.add_cast_member((*character).clone());
-
-                let notification = match senders 
+                let notification = match senders
                 {
                     Some(sender_list) => {
                         Some(
-                        Notification{ change_type: Arc::from(WhatChanged::NewCharacter(NewCharacter{ player_id: *player_id, character_id: char_id, metatype: character.metatype })), 
+                        Notification{ change_type: Arc::from(WhatChanged::NewCharacter(NewCharacter{ player_id: *player_id, character_id: *char_id, metatype: character.metatype })), 
                         send_to: sender_list })
                     },
                     None => {None}
                 };
 
-                return (Outcome::CharacterAdded((*game_id, char_id)), notification);
+                (Outcome::CharacterAdded((*game_id, *char_id)), notification)
             }
-            else
+            else 
             {
                 (Outcome::Error(Error {message: String::from("The game ID does not resolve to a running game."), kind: ErrorKind::UnknownId}), None)
             }
-            
         }, 
         _ => {
             return (Outcome::Error(Error { message: String::from("Observers may not create characters in a game."), kind: ErrorKind::InvalidStateAction }), None)
@@ -747,8 +744,8 @@ fn start_combat2(game_registry: &mut GameRegistry, combatants: Vec<CharacterId>,
     {
         Role::RoleGM(_, game_id) => {
 
-            game_registry
-
+            let notify_list = combatants.iter().map(|char_id| game_registry.players_by_character(game_id, char_id))
+                .filter(|p| p.is_some()).map(|p| *p.unwrap()).collect::<Vec<PlayerId>>();
             if let Some(game) = game_registry.get_mut_game(game_id)
             {
                 if let Err(result) = game.add_combatants(combatants)
@@ -770,6 +767,7 @@ fn start_combat2(game_registry: &mut GameRegistry, combatants: Vec<CharacterId>,
                 }
                 else 
                 {
+                    
                     response = Outcome::CombatStarted;
                 }
             }
@@ -781,7 +779,7 @@ fn start_combat2(game_registry: &mut GameRegistry, combatants: Vec<CharacterId>,
         _ => {response = Outcome::Error(Error { message: String::from("Only the Game GM may initiate combat."), kind: ErrorKind::NotGameOwner })}
     }
 
-    return response;
+    return (response, None);
 
 }
 
