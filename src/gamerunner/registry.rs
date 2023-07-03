@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::Entry as MapEntry;
 use std::sync::Arc;
+use log::debug;
 use tokio::sync::mpsc::Sender;
 use uuid::Uuid;
 
@@ -44,8 +45,10 @@ impl <'a> GameRegistry
 
     pub fn new_game(&'a mut self, player_id: PlayerId, game_id: GameId, game: Game) -> Result<(),()>
     {
+        debug!("Starting new_game()");
         if self.players.contains_key(&player_id)
         {
+            debug!("Player id {} is registered as a player.", player_id);
             let mut directory_entry = GameDirectoryEntry{ game, gm: player_id, players: HashSet::new() };
             directory_entry.players.insert(player_id);
             self.games.insert(game_id, directory_entry);
@@ -53,6 +56,7 @@ impl <'a> GameRegistry
         }
         else
         {
+            debug!("Player is not registered.");
             Err(())
         }
     }
@@ -97,8 +101,10 @@ impl <'a> GameRegistry
 
     pub fn join_game(&mut self, player_id: PlayerId, game_id: GameId) -> Result<(), ()>
     {
+        debug!("Starting join_game() for player_id {} and game id {}", player_id, game_id);
         if self.games.contains_key(&game_id) && self.players.contains_key(&player_id)
         {
+            debug!("Game id and player id match.");
             let game_dir = self.games.get_mut(&game_id).unwrap();
             let player_dir = self.players.get_mut(&player_id).unwrap();
 
@@ -109,6 +115,8 @@ impl <'a> GameRegistry
         }
         else
         {
+            debug!("Game id matched: {}", self.games.contains_key(&game_id));
+            debug!("Player id matched: {}", self.players.contains_key((&player_id)));
             Err(())
         }
     }
@@ -304,26 +312,36 @@ impl <'a> GameRegistry
 
     pub fn add_character(&mut self, player_id: &PlayerId, game_id: &GameId, character: Character) -> Option<CharacterId>
     {
-        if let Some(player_entry) = self.players.get_mut(player_id)
-        {
-            let mut temp = HashSet::<CharacterId>::new();
-            let characters = player_entry.player_characters.get_mut(game_id).unwrap_or(&mut temp);
+        match (self.players.get_mut(player_id), self.games.get_mut(game_id)) {
+            (Some(player_entry), Some(game)) => {
+                let character_id = game.game.add_cast_member(character);
+                player_entry.player_characters.entry(*game_id).or_insert(HashSet::new()).insert(character_id.clone());
+                Some(character_id)
+            }, 
+            _ => {
+                None
+            }, 
+        }
+        // if let Some(player_entry) = self.players.get_mut(player_id)
+        // {
+        //     let mut temp = HashSet::<CharacterId>::new();
+        //     let characters = player_entry.player_characters.get_mut(game_id).unwrap_or(&mut temp);
             
 
-            if let Some(game) = self.games.get_mut(game_id)
-            {
-                let character_id = game.game.add_cast_member(character);
-                characters.insert(character_id);
-                Some(character_id)
-            }
-            else
-            {
-                None
-            }
-        }
-        else {
-            None
-        }
+        //     if let Some(game) = self.games.get_mut(game_id)
+        //     {
+        //         let character_id = game.game.add_cast_member(character);
+        //         characters.insert(character_id);
+        //         Some(character_id)
+        //     }
+        //     else
+        //     {
+        //         None
+        //     }
+        // }
+        // else {
+        //     None
+        // }
     }
 
     pub fn players_by_character(&self, game_id: &GameId, char_id: &CharacterId) -> Option<&PlayerId>

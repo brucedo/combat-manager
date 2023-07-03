@@ -24,7 +24,7 @@ pub async fn game_runner(mut message_queue: Receiver<Message>)
     while let Some(message) = message_queue.recv().await
     {
         let (channel, player_id_opt, game_id_opt, request) = 
-            (message.reply_channel, message.player_id, message.player_id, message.msg);
+            (message.reply_channel, message.player_id, message.game_id, message.msg);
 
         let mut_directory = &mut directory;
         let authority = authorize(player_id_opt, game_id_opt, request, mut_directory);
@@ -97,16 +97,18 @@ pub enum ErrorKind
     NoEventsLeft,
     UnresolvedCombatant, 
     UnauthorizedAction,
+    Unexpected,
 }
 
 #[cfg(test)]
 mod tests
 {
     use core::panic;
+    use std::collections::HashMap;
 
 
     use log::debug;
-    use tokio::sync::oneshot::Receiver;
+    use tokio::sync::oneshot::{Sender as OneShotSender, Receiver};
     use tokio::sync::oneshot::channel;
     use tokio::sync::mpsc::channel as mpsc_channel;
     use tokio::sync::mpsc::Sender;
@@ -144,28 +146,39 @@ mod tests
 
     pub async fn add_new_game(game_input_channel: &Sender<Message>) -> (PlayerId, GameId)
     {
-        let gm = PlayerId::new_v4();
+        debug!("Starting add_new_game");
+        let gm: PlayerId;
 
         let (mut game_sender, mut game_receiver) = channel();
-        let msg = Message { player_id: Some(gm), game_id: None, reply_channel: game_sender, msg: Request::NewPlayer};
+        let msg = Message { player_id: None, game_id: None, reply_channel: game_sender, msg: Request::NewPlayer};
+
+        debug!("Message to register new player done and sending.");
+
         assert!(game_input_channel.send(msg).await.is_ok());
-        assert!(game_receiver.await.is_ok());
+        gm = match game_receiver.await {
+            Ok(Outcome::NewPlayer(playerId)) => playerId.player_id, 
+            _ => panic!("Should have received a NewPlayer object with the id and messaging channel.")
+        };
+
+        debug!("Message to register new player has been sent and OK received from response channel.  Player id: {}", gm);
 
         (game_sender, game_receiver) = channel();
         let msg = Message { player_id: Some(gm), game_id: Some(Uuid::new_v4()), reply_channel: game_sender, msg: Request::New };
+
+        debug!("Message to create new game done and about to send.");
 
         match game_input_channel.send(msg).await {
             Ok(_) => {
                 match game_receiver.await
                 {
-                    Ok(game_msg) => {
-                        match game_msg
-                        {
-                            Outcome::Created(id) => {return (gm, id)},
-                            _ => {panic!("Received a ResponseMessage enum of an unexpected type.")}
-                        }
+                    Ok(Outcome::Created(id)) => {
+                        debug!("Message has been accepted and new game {} has been created.", id);
+                        return (gm, id)
                     },
-                    Err(_) => panic!{"The oneshot channel closed while waiting for reply."},
+                    Ok(_) | Err(_) => {
+                        debug!("Message has been rejected.");
+                        panic!{"The oneshot channel closed while waiting for reply."}
+                    },
                 }
             },
             Err(_) => panic!("Game input channel closed while waiting for reply."),
@@ -234,7 +247,7 @@ mod tests
         let player_state = player_join_game(&game_input_channel, game_id).await;
 
         let (game_sender, game_receiver) = channel();
-        let msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame};
+        let msg = Message {player_id: Some(player_state.player_id), game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame};
 
         if let Err(_) = game_input_channel.send(msg).await 
         {
@@ -243,17 +256,18 @@ mod tests
 
         match game_receiver.await 
         {
-            Ok(outcome) =>
+            Ok(Outcome::JoinedGame(_)) =>
             {
-                match outcome 
-                {
-                    Outcome::JoinedGame(_) => 
-                    {
-                        // This is an acceptable return state.
-                    }
-                    _ => {panic!("Received an unexpected response - should have been JoinedGame.")}
-                }
-            }
+                // match outcome 
+                // {
+                //     Outcome::JoinedGame(_) => 
+                //     {
+                //         // This is an acceptable return state.
+                //     }
+                //     _ => {panic!("Received an unexpected response - should have been JoinedGame.")}
+                // }
+            },
+            Ok(_) => panic!("Received an unexpected response - should have been JoinedGame."),
             Err(_) => panic!("The GameRunner should have returned a current GameState object along with my update messaging channel.")
         }
     }
@@ -269,14 +283,14 @@ mod tests
         let NewPlayer {player_id: player_1_id, player_1_receiver: mut player_1_channel} 
             = player_join_game(&game_input_channel, game_id).await;
         let (mut game_sender, mut game_receiver) = channel();
-        let mut msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame};
+        let mut msg = Message {player_id: Some(player_1_id), game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame};
 
         assert!(game_input_channel.send(msg).await.is_ok() );
         assert!(game_receiver.await.is_ok());
 
         let player_state = player_join_game(&game_input_channel, game_id).await;
         (game_sender, game_receiver) = channel();
-        msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame};
+        msg = Message {player_id: Some(player_state.player_id), game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame};
 
         assert!(game_input_channel.send(msg).await.is_ok());
         assert!(game_receiver.await.is_ok());
@@ -310,15 +324,33 @@ mod tests
 
     async fn create_and_add_char(game_input_channel: &Sender<Message>, game_id: Uuid) -> (PlayerId, CharacterId)
     {
-        let (mut game_sender, mut game_receiver) = channel::<Outcome>();
-        let player_id = Uuid::new_v4();
+        debug!("Starting create_and_add_char()");
 
-        let mut msg = Message {player_id: Some(player_id), game_id: None, reply_channel: game_sender, msg: Request::NewPlayer};
+        let mut game_sender: OneShotSender<Outcome>;
+        let mut game_receiver: Receiver<Outcome>;
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+        
+        debug!("Adding a player.");
+        let mut msg = Message {player_id: None, game_id: None, reply_channel: game_sender, msg: Request::NewPlayer};
         assert!(game_input_channel.send(msg).await.is_ok());
+
+        let player_id = match game_receiver.await {
+            Ok(Outcome::NewPlayer(player)) => player.player_id, 
+            _ => panic!("Attempt to create new player has failed.")
+        };
+
+        debug!("Player {} added.", player_id);
+        debug!("Player sending request to join game {}", game_id);
 
         (game_sender, game_receiver) = channel::<Outcome>();
         msg = Message {player_id: Some(player_id), game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame};
         assert!(game_input_channel.send(msg).await.is_ok());
+
+        match game_receiver.await {
+            Ok(Outcome::JoinedGame(state)) => {assert_eq!(player_id, state.for_player)}
+            _ => panic!("Attempt to join game failed.")
+        }
 
         (game_sender, game_receiver) = channel::<Outcome>();
         let character = create_character();
@@ -332,13 +364,10 @@ mod tests
 
         match response
         {
-            Ok(msg) => {
-                match msg
-                {
-                    Outcome::CharacterAdded((game_id, character_id)) => {return (player_id, character_id);}
-                    _ => {panic!("Attempt to add character for test failed.");}
-                }
+            Ok(Outcome::CharacterAdded((_, character_id))) => {
+                    return (player_id, character_id);
             },
+            Ok(_) => {panic!("Should have received CharacterAdded outcome - interface changed.")}
             Err(_) => {panic!("Channel closed.")}
         }
     }
@@ -500,18 +529,18 @@ mod tests
         };
 
         (game_sender, game_receiver) = channel::<Outcome>();
-        msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame};
+        msg = Message {player_id: Some(melf_id), game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame};
         assert!(game_input_channel.send(msg).await.is_ok());
         assert!(game_receiver.await.is_ok());
 
         (game_sender, game_receiver) = channel::<Outcome>();
-        msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame};
+        msg = Message {player_id: Some(mork_id), game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame};
         assert!(game_input_channel.send(msg).await.is_ok());
         assert!(game_receiver.await.is_ok());
 
         (game_sender, game_receiver) = channel::<Outcome>();
 
-        msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::Delete};
+        msg = Message {player_id: Some(gm_id), game_id: Some(game_id), reply_channel: game_sender, msg: Request::Delete};
         assert!(game_input_channel.send(msg).await.is_ok());
         assert!(game_receiver.await.is_ok());
 
@@ -943,25 +972,28 @@ mod tests
 
         let (gm_id, game_id) = add_new_game(&game_input_channel).await;
 
-        let (_, character1) = create_and_add_char(&game_input_channel, game_id).await;
-        let (_, character2) = create_and_add_char(&game_input_channel, game_id).await;
-        let (_, character3) = create_and_add_char(&game_input_channel, game_id).await;
-        let (_, character4) = create_and_add_char(&game_input_channel, game_id).await;
+        let (player1, character1) = create_and_add_char(&game_input_channel, game_id).await;
+        let (player2, character2) = create_and_add_char(&game_input_channel, game_id).await;
+        let (player3, character3) = create_and_add_char(&game_input_channel, game_id).await;
+        let (player4, character4) = create_and_add_char(&game_input_channel, game_id).await;
+        let players = vec![player1, player2, player3, player4];
         let combatants = vec![character1, character2, character3, character4];
 
-        let msg = Message { player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::StartCombat(combatants.clone()) };
+        let msg = Message { player_id: Some(gm_id), game_id: Some(game_id), reply_channel: game_sender, msg: Request::StartCombat(combatants.clone()) };
 
         assert!(game_input_channel.send(msg).await.is_ok());
 
         let (game_sender, _game_receiver) = channel::<Outcome>();
-        let msg = Message { player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::BeginInitiativePhase };
+        let msg = Message { player_id: Some(gm_id), game_id: Some(game_id), reply_channel: game_sender, msg: Request::BeginInitiativePhase };
         assert!(game_input_channel.send(msg).await.is_ok());
 
-        for character_id in combatants
+        for i in 0..4
         {
             let (game_sender, game_receiver) = channel::<Outcome>();
-            let roll: Roll = Roll{character_id, roll: 13 };
-            let msg = Message { player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::AddInitiativeRoll(roll) };
+            let player_id = players.get(0).unwrap();
+            let character_id = combatants.get(0).unwrap();
+            let roll: Roll = Roll{character_id: *character_id, roll: 13 };
+            let msg = Message { player_id: Some(*player_id), game_id: Some(game_id), reply_channel: game_sender, msg: Request::AddInitiativeRoll(roll) };
             assert!(game_input_channel.send(msg).await.is_ok());
     
             match game_receiver.await
@@ -982,37 +1014,48 @@ mod tests
         }
     }
 
-    async fn construct_combat_ready_game() -> (Sender<Message>, Uuid, Vec<Uuid>)
+    async fn construct_combat_ready_game() -> (Sender<Message>, PlayerId, GameId, HashMap<PlayerId, CharacterId>)
     {
+        debug!("Started construct_combat_ready_game()");
         let game_input_channel = init();
         let (game_sender, _game_receiver) = channel::<Outcome>();
 
         let (gm, game_id) = add_new_game(&game_input_channel).await;
 
-        let (_, character1) = create_and_add_char(&game_input_channel, game_id).await;
-        let (_, character2) = create_and_add_char(&game_input_channel, game_id).await;
-        let (_, character3) = create_and_add_char(&game_input_channel, game_id).await;
-        let (_, character4) = create_and_add_char(&game_input_channel, game_id).await;
+        debug!("GM {} has created game {}", gm, game_id);
+
+        let (player1, character1) = create_and_add_char(&game_input_channel, game_id).await;
+        let (player2, character2) = create_and_add_char(&game_input_channel, game_id).await;
+        let (player3, character3) = create_and_add_char(&game_input_channel, game_id).await;
+        let (player4, character4) = create_and_add_char(&game_input_channel, game_id).await;
         let combatants = vec![character1, character2, character3, character4];
 
-        let msg = Message { player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::StartCombat(combatants.clone()) };
+        let msg = Message { player_id: Some(gm), game_id: Some(game_id), reply_channel: game_sender, msg: Request::StartCombat(combatants.clone()) };
 
         assert!(game_input_channel.send(msg).await.is_ok());
 
         let (game_sender, _game_receiver) = channel::<Outcome>();
-        let msg = Message { player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::BeginInitiativePhase };
+        let msg = Message { player_id: Some(gm), game_id: Some(game_id), reply_channel: game_sender, msg: Request::BeginInitiativePhase };
         assert!(game_input_channel.send(msg).await.is_ok());
 
-        return (game_input_channel, game_id, combatants);
+        let mut player_character_map = HashMap::<Uuid, Uuid>::new();
+        player_character_map.insert(player1, character1);
+        player_character_map.insert(player2, character2);
+        player_character_map.insert(player3, character3);
+        player_character_map.insert(player4, character4);
+
+        return (game_input_channel, gm, game_id, player_character_map);
     }
 
     #[tokio::test]
     pub async fn sending_start_combat_round_before_all_combatants_have_sent_initiatives_generates_invalid_state_action()
     {
-        let (game_input_channel, game_id, combatants) = construct_combat_ready_game().await;
+        let (game_input_channel, gm, game_id, player_char_map) = construct_combat_ready_game().await;
+
+        let combatants = player_char_map.values().collect::<Vec<&Uuid>>();
 
         let (game_sender, _game_receiver) = channel::<Outcome>();
-        let roll = Roll{ character_id: *combatants.get(0).unwrap(), roll: 23 };
+        let roll = Roll{ character_id: **combatants.get(0).unwrap(), roll: 23 };
         let msg = Message{player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::AddInitiativeRoll(roll)};
         assert!(game_input_channel.send(msg).await.is_ok());
         
@@ -1087,7 +1130,7 @@ mod tests
     #[tokio::test]
     pub async fn sending_begin_initiative_after_declaring_combat_generates_invalid_state_action()
     {
-        let (game_input_channel, game_id, _combatants) = construct_combat_ready_game().await;
+        let (game_input_channel, gm, game_id, _combatants) = construct_combat_ready_game().await;
 
         let (game_sender, game_receiver) = channel::<Outcome>();
         let msg = Message { player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::StartCombatRound };
@@ -1241,29 +1284,31 @@ mod tests
     #[tokio::test]
     pub async fn when_the_highest_initiative_player_acts_in_combat_the_outcome_should_be_action_taken()
     {
-        let (sender, game_id, characters) = construct_combat_ready_game().await;
+        let (sender, gm, game_id, player_char_map) = construct_combat_ready_game().await;
+
+        let characters = player_char_map.values().collect::<Vec<&CharacterId>>();
 
         let (mut game_owned_sender, mut our_receiver) = channel::<Outcome>();
         let mut msg = Message{ player_id: None, game_id: Some(game_id), reply_channel: game_owned_sender, msg: Request::AddInitiativeRoll
-            (Roll{ character_id: *characters.get(0).unwrap(), roll: 13 }) };
+            (Roll{ character_id: **characters.get(0).unwrap(), roll: 13 }) };
         assert!(sender.send(msg).await.is_ok());
         assert!(our_receiver.await.is_ok());
         
         (game_owned_sender, our_receiver) = channel::<Outcome>();
         msg = Message{ player_id: None, game_id: Some(game_id), reply_channel: game_owned_sender, msg: Request::AddInitiativeRoll
-            (Roll{ character_id: *characters.get(1).unwrap(), roll: 23 }) };
+            (Roll{ character_id: **characters.get(1).unwrap(), roll: 23 }) };
         assert!(sender.send(msg).await.is_ok());
         assert!(our_receiver.await.is_ok());
         
         (game_owned_sender, our_receiver) = channel::<Outcome>();
         msg = Message{ player_id: None, game_id: Some(game_id), reply_channel: game_owned_sender, msg: Request::AddInitiativeRoll
-            (Roll{ character_id: *characters.get(2).unwrap(), roll: 9 }) };
+            (Roll{ character_id: **characters.get(2).unwrap(), roll: 9 }) };
         assert!(sender.send(msg).await.is_ok());
         assert!(our_receiver.await.is_ok());
         
         (game_owned_sender, our_receiver) = channel::<Outcome>();
         msg = Message{ player_id: None, game_id: Some(game_id), reply_channel: game_owned_sender, msg: Request::AddInitiativeRoll
-            (Roll{ character_id: *characters.get(3).unwrap(), roll: 16 }) };
+            (Roll{ character_id: **characters.get(3).unwrap(), roll: 16 }) };
         assert!(sender.send(msg).await.is_ok());
         assert!(our_receiver.await.is_ok());
 
@@ -1274,7 +1319,7 @@ mod tests
         
         (game_owned_sender, our_receiver) = channel::<Outcome>();
         msg = Message{ player_id: None, game_id: Some(game_id), reply_channel: game_owned_sender, msg: Request::TakeAction
-            (Action{character_id: *characters.get(1).unwrap(), action: ActionType::Complex})};
+            (Action{character_id: **characters.get(1).unwrap(), action: ActionType::Complex})};
         
         assert!(sender.send(msg).await.is_ok());
 
@@ -1297,29 +1342,31 @@ mod tests
     #[tokio::test]
     pub async fn when_in_combat_rounds_any_character_can_use_their_free_action_anytime()
     {
-        let (sender, game_id, characters) = construct_combat_ready_game().await;
+        let (sender, gm, game_id, player_char_map) = construct_combat_ready_game().await;
+
+        let characters = player_char_map.values().collect::<Vec<&CharacterId>>();
 
         let (mut game_owned_sender, mut our_receiver) = channel::<Outcome>();
         let mut msg = Message{ player_id: None, game_id: Some(game_id), reply_channel: game_owned_sender, msg: Request::AddInitiativeRoll
-            (Roll{ character_id: *characters.get(0).unwrap(), roll: 13 }) };
+            (Roll{ character_id: **characters.get(0).unwrap(), roll: 13 }) };
         assert!(sender.send(msg).await.is_ok());
         assert!(our_receiver.await.is_ok());
         
         (game_owned_sender, our_receiver) = channel::<Outcome>();
         msg = Message{ player_id: None, game_id: Some(game_id), reply_channel: game_owned_sender, msg: Request::AddInitiativeRoll
-            (Roll{ character_id: *characters.get(1).unwrap(), roll: 23 }) };
+            (Roll{ character_id: **characters.get(1).unwrap(), roll: 23 }) };
         assert!(sender.send(msg).await.is_ok());
         assert!(our_receiver.await.is_ok());
         
         (game_owned_sender, our_receiver) = channel::<Outcome>();
         msg = Message{ player_id: None, game_id: Some(game_id), reply_channel: game_owned_sender, msg: Request::AddInitiativeRoll
-            (Roll{ character_id: *characters.get(2).unwrap(), roll: 9 }) };
+            (Roll{ character_id: **characters.get(2).unwrap(), roll: 9 }) };
         assert!(sender.send(msg).await.is_ok());
         assert!(our_receiver.await.is_ok());
         
         (game_owned_sender, our_receiver) = channel::<Outcome>();
         msg = Message{ player_id: None, game_id: Some(game_id), reply_channel: game_owned_sender, msg: Request::AddInitiativeRoll
-            (Roll{ character_id: *characters.get(3).unwrap(), roll: 16 }) };
+            (Roll{ character_id: **characters.get(3).unwrap(), roll: 16 }) };
         assert!(sender.send(msg).await.is_ok());
         assert!(our_receiver.await.is_ok());
 
@@ -1329,7 +1376,7 @@ mod tests
         assert!(our_receiver.await.is_ok());
 
         (game_owned_sender, our_receiver) = channel::<Outcome>();
-        msg = Message{ player_id: None, game_id: Some(game_id), reply_channel: game_owned_sender, msg: Request::TakeAction(Action{ character_id: *characters.get(2).unwrap(), action: ActionType::Free })};
+        msg = Message{ player_id: None, game_id: Some(game_id), reply_channel: game_owned_sender, msg: Request::TakeAction(Action{ character_id: **characters.get(2).unwrap(), action: ActionType::Free })};
         assert!(sender.send(msg).await.is_ok());
         
         match our_receiver.await
@@ -1350,40 +1397,52 @@ mod tests
     #[tokio::test]
     pub async fn a_character_that_takes_simple_or_complex_action_out_of_turn_will_generate_not_characters_turn_error()
     {
-        let (sender, game_id, characters) = construct_combat_ready_game().await;
+        let (sender, gm, game_id, player_char_map) = construct_combat_ready_game().await;
+
+        let characters = player_char_map.values().collect::<Vec<&CharacterId>>();
+
+        let players = player_char_map.keys().collect::<Vec<&PlayerId>>();
+        let player1 = players.get(0).unwrap();
+        let player2 = players.get(1).unwrap();
+        let player3 = players.get(2).unwrap();
+        let player4 = players.get(3).unwrap();
+        let character1 = player_char_map.get(player1).unwrap();
+        let character2 = player_char_map.get(player2).unwrap();
+        let character3 = player_char_map.get(player3).unwrap();
+        let character4 = player_char_map.get(player4).unwrap();
 
         let (mut game_owned_sender, mut our_receiver) = channel::<Outcome>();
-        let mut msg = Message{ player_id: None, game_id: Some(game_id), reply_channel: game_owned_sender, msg: Request::AddInitiativeRoll
-            (Roll{ character_id: *characters.get(0).unwrap(), roll: 13 }) };
+        let mut msg = Message{ player_id: Some(**player1), game_id: Some(game_id), reply_channel: game_owned_sender, msg: Request::AddInitiativeRoll
+            (Roll{ character_id: *character1, roll: 13 }) };
         assert!(sender.send(msg).await.is_ok());
         assert!(our_receiver.await.is_ok());
         
         (game_owned_sender, our_receiver) = channel::<Outcome>();
-        msg = Message{ player_id: None, game_id: Some(game_id), reply_channel: game_owned_sender, msg: Request::AddInitiativeRoll
-            (Roll{ character_id: *characters.get(1).unwrap(), roll: 23 }) };
+        msg = Message{ player_id: Some(**player2), game_id: Some(game_id), reply_channel: game_owned_sender, msg: Request::AddInitiativeRoll
+            (Roll{ character_id: *character2, roll: 23 }) };
         assert!(sender.send(msg).await.is_ok());
         assert!(our_receiver.await.is_ok());
         
         (game_owned_sender, our_receiver) = channel::<Outcome>();
-        msg = Message{ player_id: None, game_id: Some(game_id), reply_channel: game_owned_sender, msg: Request::AddInitiativeRoll
-            (Roll{ character_id: *characters.get(2).unwrap(), roll: 9 }) };
+        msg = Message{ player_id: Some(**player3), game_id: Some(game_id), reply_channel: game_owned_sender, msg: Request::AddInitiativeRoll
+            (Roll{ character_id: *character3, roll: 9 }) };
         assert!(sender.send(msg).await.is_ok());
         assert!(our_receiver.await.is_ok());
         
         (game_owned_sender, our_receiver) = channel::<Outcome>();
-        msg = Message{ player_id: None, game_id: Some(game_id), reply_channel: game_owned_sender, msg: Request::AddInitiativeRoll
-            (Roll{ character_id: *characters.get(3).unwrap(), roll: 16 }) };
+        msg = Message{ player_id: Some(**player4), game_id: Some(game_id), reply_channel: game_owned_sender, msg: Request::AddInitiativeRoll
+            (Roll{ character_id: *character4, roll: 16 }) };
         assert!(sender.send(msg).await.is_ok());
         assert!(our_receiver.await.is_ok());
 
         (game_owned_sender, our_receiver) = channel::<Outcome>();
-        msg = Message{ player_id: None, game_id: Some(game_id), reply_channel: game_owned_sender, msg: Request::StartCombatRound};
+        msg = Message{ player_id: Some(gm), game_id: Some(game_id), reply_channel: game_owned_sender, msg: Request::StartCombatRound};
         assert!(sender.send(msg).await.is_ok());
         assert!(our_receiver.await.is_ok());
 
         (game_owned_sender, our_receiver) = channel::<Outcome>();
-        msg = Message{ player_id: None, game_id: Some(game_id), reply_channel: game_owned_sender, msg: Request::TakeAction
-            (Action{ character_id: *characters.get(3).unwrap(), action: ActionType::Complex })};
+        msg = Message{ player_id: Some(**player3), game_id: Some(game_id), reply_channel: game_owned_sender, msg: Request::TakeAction
+            (Action{ character_id: *character3, action: ActionType::Complex })};
         assert!(sender.send(msg).await.is_ok());
 
         match our_receiver.await

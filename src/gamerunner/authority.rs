@@ -1,15 +1,18 @@
 use std::collections::HashSet;
 
+use log::debug;
+
 use super::{PlayerId, GameId, dispatcher::{Request, Message}, registry::GameRegistry, CharacterId};
 
 
 
-pub fn authorize<'a, 'b>(game_id: Option<GameId>, player_id: Option<PlayerId>, request: Request, directory: &'b mut GameRegistry) -> Authority
+pub fn authorize<'a, 'b>(player_id_opt: Option<GameId>, game_id_opt: Option<PlayerId>, request: Request, directory: &'b mut GameRegistry) -> Authority
 {
 
-    match (game_id, player_id)
+    match (game_id_opt, player_id_opt)
     {
         (Some(game_id), Some(player_id)) => {
+            debug!("Matching role for player id {} on game id {}", player_id, game_id);
             let resource_role = 
             if directory.is_gm(&player_id, &game_id)
             {
