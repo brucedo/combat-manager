@@ -125,6 +125,34 @@ impl <'a> GameRegistry
         }
     }
 
+    pub fn gm_id(&self, game_id:  &GameId) -> Option<&PlayerId>
+    {
+        if let Some(game_entry) = self.games.get(game_id)
+        {
+            Some(&game_entry.gm)
+        }
+        else {
+            None
+        }
+    }
+
+    pub fn gm_sender(&self, game_id: &GameId) -> Option<Sender<Arc<WhatChanged>>>
+    {
+        if let Some(gm_id) = self.gm_id(game_id)
+        {
+            if let Some(player_entry) = self.players.get(gm_id)
+            {
+                Some(player_entry.player_sender.clone())
+            }
+            else {
+                None
+            }
+        }
+        else {
+            None
+        }
+    }
+
     pub fn game_has_player(&self, game_id: &GameId, player_id: &PlayerId) -> bool
     {
         self.games.contains_key(game_id) && self.games.get(game_id).unwrap().players.contains(player_id)
@@ -324,7 +352,7 @@ pub mod tests
 {
     use std::{collections::HashSet, ops::RemAssign, sync::Arc};
 
-    use tokio::sync::mpsc::channel;
+    use tokio::sync::mpsc::{channel, Sender};
     use uuid::Uuid;
 
     use crate::{tracker::{game::Game, character::Character}, gamerunner::{WhatChanged, PlayerId, CharacterId}};
@@ -452,6 +480,51 @@ pub mod tests
         registry.new_game(gm, game_id, game);
 
         assert!(registry.join_game(player_id, game_id).is_err());
+    }
+
+    #[tokio::test]
+    pub async fn the_id_of_a_games_gm_may_be_retrieved_with_gm_id()
+    {
+        let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, _) = channel(32);
+
+        let game_id = Uuid::new_v4();
+
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_id, Game::new());
+
+        assert!(registry.gm_id(&game_id).is_some());
+        let retrieved_id: &PlayerId = registry.gm_id(&game_id).unwrap();
+
+        assert_eq!(gm, *retrieved_id);
+    }
+
+    #[tokio::test]
+    pub async fn a_gms_sending_channel_may_be_retrieved_with_gm_sender()
+    {
+        let mut registry = GameRegistry::new();
+        let gm = PlayerId::new_v4();
+        let (gm_sender, gm_receiver) = channel(32);
+
+        let game_id = Uuid::new_v4();
+
+        registry.register_player(gm, gm_sender);
+        registry.new_game(gm, game_id, Game::new());
+
+        assert!(registry.gm_sender(&game_id).is_some());
+        let sender: Sender<Arc<WhatChanged>> = registry.gm_sender(&game_id).unwrap();
+
+        sender.send(Arc::from(WhatChanged::StartingCombatRound)).await;
+
+        let sent_message = gm_receiver.recv().await;
+        assert!(sent_message.is_some());
+        match sent_message.unwrap().as_ref()
+        {
+            WhatChanged::StartingCombatRound => {}
+            _ => {panic!("The wrong WhatChanged was sent.")}
+        }
+
     }
 
     #[tokio::test]
