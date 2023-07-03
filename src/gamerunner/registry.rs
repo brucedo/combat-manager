@@ -505,7 +505,7 @@ pub mod tests
     {
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
-        let (gm_sender, gm_receiver) = channel(32);
+        let (gm_sender, mut gm_receiver) = channel(32);
 
         let game_id = Uuid::new_v4();
 
