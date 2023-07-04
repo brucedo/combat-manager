@@ -315,7 +315,7 @@ fn end_game(authority: &Authority, directory: &mut GameRegistry) -> (Outcome, Op
         }
         _ => 
         {
-            (Outcome::Error(Error { message: String::from("The action requested (Delete Game) may only be initiated by the game's GM."), kind: ErrorKind::NotGameOwner }), None)
+            (Outcome::Error(Error { message: String::from("The action requested (Delete Game) may only be initiated by the game's GM."), kind: ErrorKind::UnauthorizedAction }), None)
         }
     }
     
@@ -401,12 +401,12 @@ fn add_character(character: &Character, registry: &mut GameRegistry, authority: 
             else 
             {
                 debug!("add_character failed - there is no game by the provided id {}", game_id);
-                (Outcome::Error(Error {message: String::from("The game ID does not resolve to a running game."), kind: ErrorKind::UnknownId}), None)
+                (Outcome::Error(Error {message: String::from("The game ID does not resolve to a running game."), kind: ErrorKind::UnauthorizedAction}), None)
             }
         }, 
         _ => {
             debug!("The authority ResourceRole is not sufficient to add a player.");
-            return (Outcome::Error(Error { message: String::from("Observers may not create characters in a game."), kind: ErrorKind::InvalidStateAction }), None)
+            return (Outcome::Error(Error { message: String::from("Observers may not create characters in a game."), kind: ErrorKind::UnauthorizedAction }), None)
         }
     }
     
