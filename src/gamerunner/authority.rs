@@ -1,8 +1,6 @@
-use std::collections::HashSet;
-
 use log::debug;
 
-use super::{PlayerId, GameId, dispatcher::{Request, Message}, registry::GameRegistry, CharacterId};
+use super::{PlayerId, GameId, dispatcher::Request, registry::GameRegistry};
 
 
 

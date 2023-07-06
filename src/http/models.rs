@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use rocket::serde::{Serialize, Deserialize, self};
+use rocket::serde::{Serialize, Deserialize};
 use rocket::form::FromForm;
 use uuid::Uuid;
 

@@ -548,7 +548,7 @@ fn start_combat(game_registry: &mut GameRegistry, combatants: Vec<CharacterId>, 
                 response = Outcome::Error(Error { message: String::from("Provided ID does not map to a running game."), kind: ErrorKind::UnknownId});
             }
         },
-        _ => {response = Outcome::Error(Error { message: String::from("Only the Game GM may initiate combat."), kind: ErrorKind::NotGameOwner })}
+        _ => {response = Outcome::Error(Error { message: String::from("Only the Game GM may initiate combat."), kind: ErrorKind::UnauthorizedAction })}
     }
 
     return (response, None);

@@ -104,12 +104,12 @@ async fn build_player_view(game_id: Uuid, session: &Session, state: &State<Metag
     Ok(Template::render("player_view", view))
 }
 
-async fn build_gm_view(game_id: Uuid, sesion: &Session, state: &State<Metagame<'_>>) -> Result<Template, Error>
+async fn build_gm_view(game_id: Uuid, _sesion: &Session, state: &State<Metagame<'_>>) -> Result<Template, Error>
 {
     let outcome = send_and_recv(game_id, Request::GetPcCast, state.game_runner_pipe.clone()).await?;
     let mut pcs: Vec<SimpleCharacterView>;
     let mut npcs: Vec<SimpleCharacterView>;
-    let game_name = state.game_name(game_id).unwrap_or(String::from(""));
+    let _game_name = state.game_name(game_id).unwrap_or(String::from(""));
 
     match outcome
     {

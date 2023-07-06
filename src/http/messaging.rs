@@ -1,8 +1,6 @@
 use rocket::get;
 use uuid::Uuid;
 
-use crate::http::session::Session;
-
 use rocket::response::stream::{Event, EventStream};
 use rocket::tokio::time::{self, Duration};
 
