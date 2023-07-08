@@ -12,10 +12,18 @@ env_logger = "^0.9.0"
 rand = "0.8.5"
 
 [dependencies.tokio]
-version = "1.18.2"
+version = "1.29.1"
 features = [
-    "rt-multi-thread"
+    "rt-multi-thread",
+    "macros",
+    "sync"
 ]
+
+[dependencies.axum]
+version = "0.6.18"
+
+[dependencies.serde]
+version = "1.0.167"
 
 [dependencies.uuid]
 version = "1.1.0"
@@ -26,19 +34,5 @@ features = [
     "serde",             # Enable serde-based serialization/deserialization
 ]
 
-[dependencies.rocket]
-version = "0.5.0-rc.2"
-features = [
-    "json",
-    "uuid"
-]
-
-[dependencies.rocket_dyn_templates]
-features = ["handlebars"]
-
 [dependencies.parking_lot]
 version = "0.12.1"
-
-[dependencies.serde]
-version = "1.0"
-features = ["derive", "rc"]

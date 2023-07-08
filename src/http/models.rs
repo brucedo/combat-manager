@@ -1,19 +1,17 @@
 use std::sync::Arc;
 
-use rocket::serde::{Serialize, Deserialize};
-use rocket::form::FromForm;
 use uuid::Uuid;
 
 use crate::tracker::character::{Character, Metatypes};
 
-#[derive(Serialize, Deserialize)]
+// #[derive(Serialize, Deserialize)]
 pub struct IndexModel<'r>
 {
     pub player_handle: &'r str,
     pub summaries: Vec<GameSummary>
 }
 
-#[derive(Serialize, Deserialize)]
+// #[derive(Serialize, Deserialize)]
 pub struct GameSummary
 {
     pub game_name: String,
@@ -21,7 +19,7 @@ pub struct GameSummary
     pub gm: Uuid
 }
 
-#[derive(Serialize)]
+// #[derive(Serialize)]
 pub struct GMView
 {
     pub game_id: Uuid,
@@ -29,7 +27,7 @@ pub struct GMView
     pub npcs: Vec<SimpleCharacterView>,
 }
 
-#[derive(Serialize)]
+// #[derive(Serialize)]
 pub struct SimpleCharacterView
 {
     pub char_name: String,
@@ -51,7 +49,7 @@ impl From<&Character> for SimpleCharacterView
     }
 }
 
-#[derive(Serialize)]
+// #[derive(Serialize)]
 pub struct PlayerView
 {
     pub player_handle: Arc<String>,
@@ -69,13 +67,13 @@ pub struct PlayerView
 // }
 
 
-#[derive(FromForm)]
+// #[derive(FromForm)]
 pub struct NewGame<'r>
 {
     pub game_name: &'r str
 }
 
-#[derive(FromForm)]
+// #[derive(FromForm)]
 pub struct NewCharacter<'r>
 {
     pub char_name: &'r str,

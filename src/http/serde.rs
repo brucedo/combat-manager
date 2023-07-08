@@ -1,9 +1,8 @@
-use rocket::serde::{Serialize, Deserialize};
+
 use uuid::Uuid;
 
 
-#[derive(Serialize, Deserialize)]
-#[serde(crate = "rocket::serde")]
+// #[derive(Serialize, Deserialize)]
 pub struct NewGame
 {
     pub game_id: Option<Uuid>,
@@ -12,8 +11,7 @@ pub struct NewGame
     pub gm_name: String,
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(crate = "rocket::serde")]
+// #[derive(Serialize, Deserialize)]
 pub struct Character<'r>
 {
     pub pc: bool,
@@ -21,30 +19,26 @@ pub struct Character<'r>
     pub name: &'r str,
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(crate = "rocket::serde")]
+// #[derive(Serialize, Deserialize)]
 pub struct AddedCharacterJson
 {
     pub game_id: Uuid,
     pub char_id: Uuid,
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(crate = "rocket::serde")]
+// #[derive(Serialize, Deserialize)]
 pub struct BeginCombat
 {
     pub participants: Vec<Uuid>
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(crate = "rocket::serde")]
+// #[derive(Serialize, Deserialize)]
 pub struct NewState
 {
     pub to_state: State,
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(crate = "rocket::serde")]
+// #[derive(Serialize, Deserialize)]
 pub enum State
 {
     Combat(BeginCombat),
@@ -54,8 +48,7 @@ pub enum State
 }
 
 
-#[derive(Serialize, Deserialize)]
-#[serde(crate = "rocket::serde")]
+// #[derive(Serialize, Deserialize)]
 pub struct InitiativeRoll
 {
     pub char_id: Uuid,
@@ -63,8 +56,7 @@ pub struct InitiativeRoll
 }
 
 
-#[derive(Serialize, Deserialize)]
-#[serde(crate = "rocket::serde")]
+// #[derive(Serialize, Deserialize)]
 pub enum Metatypes
 {
     Human,

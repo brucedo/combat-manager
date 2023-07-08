@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 use log::debug;
 use parking_lot::{RwLock, Mutex};
-use rocket::{Request, request::{FromRequest, Outcome, self}, http::Cookie, time::{OffsetDateTime, Duration}};
+// use rocket::{Request, request::{FromRequest, Outcome, self}, http::Cookie, time::{OffsetDateTime, Duration}};
 use uuid::Uuid;
 
 pub struct SessionData
@@ -142,105 +142,105 @@ pub enum NewSessionOutcome
 
 }
 
-#[rocket::async_trait]
-impl<'r> FromRequest<'r> for Session
-{
-    type Error = NoSession;
+// #[rocket::async_trait]
+// impl<'r> FromRequest<'r> for Session
+// {
+//     type Error = NoSession;
 
-    async fn from_request(request: &'r Request<'_>) -> request::Outcome<Self, Self::Error>
-    // where 'r: 'async_trait, 'life0: 'async_trait,Self: 'async_trait 
-    {
-        debug!("Session guard firing.");
-        match request.cookies().get_pending("shadowrun_combat_session")
-        {
-            Some(session_cookie) => 
-            {
-                debug!("Session cookie lookup succeeded.");
-                let session_id: Uuid;
-                match Uuid::parse_str(session_cookie.value())
-                {
-                    Ok(temp) => 
-                    { 
-                        session_id = temp; 
-                        debug!("Session ID parsed into UUID.");
-                    },
-                    Err(_) =>  
-                    {
-                        debug!("Session ID is not a valid UUID form.");
-                        return Outcome::Forward(())
-                    }
-                }
+    // async fn from_request(request: &'r Request<'_>) -> request::Outcome<Self, Self::Error>
+    // // where 'r: 'async_trait, 'life0: 'async_trait,Self: 'async_trait 
+    // {
+    //     debug!("Session guard firing.");
+    //     match request.cookies().get_pending("shadowrun_combat_session")
+    //     {
+    //         Some(session_cookie) => 
+    //         {
+    //             debug!("Session cookie lookup succeeded.");
+    //             let session_id: Uuid;
+    //             match Uuid::parse_str(session_cookie.value())
+    //             {
+    //                 Ok(temp) => 
+    //                 { 
+    //                     session_id = temp; 
+    //                     debug!("Session ID parsed into UUID.");
+    //                 },
+    //                 Err(_) =>  
+    //                 {
+    //                     debug!("Session ID is not a valid UUID form.");
+    //                     return Outcome::Forward(())
+    //                 }
+    //             }
 
-                let map = request.rocket().state::<SessionMap>().unwrap_or_else(|| panic!());
+    //             let map = request.rocket().state::<SessionMap>().unwrap_or_else(|| panic!());
 
-                match map.find_session(session_id)
-                {
-                    Some(session) => 
-                    {
-                        debug!("Session UUID maps to a valid Session object");
-                        return Outcome::Success(session);
-                    },
-                    None => 
-                    {
-                        debug!("Session UUID does NOT map to a valid Session object - throwing.");
-                        return Outcome::Forward(())
-                    },
-                }
-            },
-            None => 
-            {
-                debug!("No session cookie present in jar.");
-                return Outcome::Forward(())
-            },
-        };
-    }
-}
+    //             match map.find_session(session_id)
+    //             {
+    //                 Some(session) => 
+    //                 {
+    //                     debug!("Session UUID maps to a valid Session object");
+    //                     return Outcome::Success(session);
+    //                 },
+    //                 None => 
+    //                 {
+    //                     debug!("Session UUID does NOT map to a valid Session object - throwing.");
+    //                     return Outcome::Forward(())
+    //                 },
+    //             }
+    //         },
+    //         None => 
+    //         {
+    //             debug!("No session cookie present in jar.");
+    //             return Outcome::Forward(())
+    //         },
+    //     };
+    // }
+// }
 
-#[rocket::async_trait]
-impl<'r> FromRequest<'r> for NewSessionOutcome
-{
-    type Error = NewSessionOutcome;
+// #[rocket::async_trait]
+// impl<'r> FromRequest<'r> for NewSessionOutcome
+// {
+//     type Error = NewSessionOutcome;
 
-    async fn from_request(request: &'r Request<'_>) -> request::Outcome<Self, Self::Error>
-    {
-        debug!("Starting NewSessionOutcome guard.");
-        let new_session_id = Uuid::new_v4();
-        let response: Outcome<Self, Self::Error>;
-        match request.cookies().get("shadowrun_combat_session")
-        {
-            Some(session_cookie) =>
-            {
-                match Uuid::parse_str(session_cookie.value())
-                {
-                    Ok(session_id) => 
-                    {
-                        let map = request.rocket().state::<SessionMap>().unwrap_or_else(|| panic!());
-                        map.drop_session(session_id);
+    // async fn from_request(request: &'r Request<'_>) -> request::Outcome<Self, Self::Error>
+    // {
+    //     debug!("Starting NewSessionOutcome guard.");
+    //     let new_session_id = Uuid::new_v4();
+    //     let response: Outcome<Self, Self::Error>;
+    //     match request.cookies().get("shadowrun_combat_session")
+    //     {
+    //         Some(session_cookie) =>
+    //         {
+    //             match Uuid::parse_str(session_cookie.value())
+    //             {
+    //                 Ok(session_id) => 
+    //                 {
+    //                     let map = request.rocket().state::<SessionMap>().unwrap_or_else(|| panic!());
+    //                     map.drop_session(session_id);
 
-                        response = Outcome::Success(NewSessionOutcome::Exists);
-                    },
-                    Err(_) => 
-                    {
-                        response = Outcome::Success(NewSessionOutcome::New)
-                    }
-                }
-            }
-            None =>
-            {
-                response = Outcome::Success(NewSessionOutcome::New);
-            }
-        }
+    //                     response = Outcome::Success(NewSessionOutcome::Exists);
+    //                 },
+    //                 Err(_) => 
+    //                 {
+    //                     response = Outcome::Success(NewSessionOutcome::New)
+    //                 }
+    //             }
+    //         }
+    //         None =>
+    //         {
+    //             response = Outcome::Success(NewSessionOutcome::New);
+    //         }
+    //     }
 
-        let new_session = Session::new();
-        let map = request.rocket().state::<SessionMap>().unwrap_or_else(|| panic!());
-        map.add_session(new_session_id, new_session);
-        let session_cookie = Cookie::build("shadowrun_combat_session", new_session_id.to_string())
-            .expires(OffsetDateTime::now_utc().saturating_add(Duration::DAY))
-            .finish();
-        request.cookies().add(session_cookie);
+    //     let new_session = Session::new();
+    //     let map = request.rocket().state::<SessionMap>().unwrap_or_else(|| panic!());
+    //     map.add_session(new_session_id, new_session);
+    //     let session_cookie = Cookie::build("shadowrun_combat_session", new_session_id.to_string())
+    //         .expires(OffsetDateTime::now_utc().saturating_add(Duration::DAY))
+    //         .finish();
+    //     request.cookies().add(session_cookie);
 
-        debug!("Finishing new session with value {}", response);
+    //     debug!("Finishing new session with value {}", response);
 
-        return response;
-    }
-}
+    //     return response;
+    // }
+// }

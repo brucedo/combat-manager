@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use log::debug;
 use parking_lot::RwLock;
-use rocket::http::uri::Origin;
 use tokio::sync::mpsc::Sender;
 use uuid::Uuid;
 
@@ -22,11 +21,11 @@ impl<'s> Metagame<'s>
         Metagame { game_runner_pipe: my_channel, game_details: RwLock::new(HashMap::new())}
     }
 
-    pub fn new_game(&self, game_id: Uuid, gm_id: Uuid, game_name: String, game_url: Origin<'s>)
+    pub fn new_game(&self, game_id: Uuid, gm_id: Uuid, game_name: String)
     {
         let mut detail_set = self.game_details.write();
 
-        detail_set.insert(game_id, GameAdditionalInformation{gm_id, game_name, game_url});
+        detail_set.insert(game_id, GameAdditionalInformation{gm_id, game_name, gamer_ref: "Tough"});
     }
 
     pub fn validate_ownership(&self, player_id: Uuid, game_id: Uuid) -> bool
@@ -57,6 +56,5 @@ pub struct GameAdditionalInformation<'a>
 {
     pub gm_id: Uuid,
     pub game_name: String,
-    pub game_url: Origin<'a>,
-
+    pub gamer_ref: &'a str
 }
