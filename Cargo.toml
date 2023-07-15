@@ -36,3 +36,6 @@ features = [
 
 [dependencies.parking_lot]
 version = "0.12.1"
+
+[dependencies.handlebars]
+version = "4.3.7"

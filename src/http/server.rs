@@ -1,21 +1,55 @@
 
-use axum::Router;
+use std::sync::Arc;
+
+use axum::body::Body;
+use axum::{Router, middleware};
 use axum::routing::get;
 use log::debug;
+use serde::Serialize;
 use tokio::sync::{mpsc::Sender, oneshot::channel};
 use tokio::sync::oneshot::Receiver as OneShotReceiver;
 use uuid::Uuid;
 
+use crate::http::modelview::{model_view_render};
+use crate::http::state::State;
 use crate::{gamerunner::dispatcher::{Request, Message, Outcome, Roll}, http::{serde::{NewGame, InitiativeRoll}, metagame::Metagame},};
 
 use super::serde::{Character, AddedCharacterJson, NewState, BeginCombat};
 
+#[derive(Clone)]
+struct AppState<'a> {
+    pub handlebars: handlebars::Handlebars<'a>,
+}
 
 
-pub async fn start_server()
+async fn my_middleware<B>(
+    axum::extract::State(state): axum::extract::State<Arc<State<'_>>>,
+    // you can add more extractors here but the last
+    // extractor must implement `FromRequest` which
+    // `Request` does
+    request: axum::http::Request<B>,
+    next: axum::middleware::Next<B>,
+) -> axum::response::Response {
+    // do something with `request`...
+
+    let response = next.run(request).await;
+
+    // do something with `response`...
+
+    response
+}
+
+pub async fn start_server(templates: handlebars::Handlebars<'static>)
 {
     debug!("start_server() called");
-    let app = Router::new().route("/", get(|| async { "ShadowRun The Game The Movie"}));
+
+    // let state = Arc::from(State { handlebars: handlebars::Handlebars::new() });
+    let temp = templates.clone();
+    let state = Arc::from(State { handlebars: temp });
+
+    let app = Router::new().route("/", get(|| async { "ShadowRun The Game The Movie"}))
+        .route_layer(middleware::from_fn_with_state(state.clone(), model_view_render::<Body>))
+        .with_state(state);
 
     debug!("Attempting to start server on 0.0.0.0:8080");
     axum::Server::bind(&"0.0.0.0:8080".parse().unwrap())
