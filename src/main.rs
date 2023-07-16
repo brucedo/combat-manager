@@ -6,7 +6,7 @@ use std::process::exit;
 
 use axum::Router;
 use axum::routing::get;
-use log::{debug, error, logger};
+use log::{debug, error};
 use tokio::sync::mpsc;
 
 pub mod tracker;
@@ -16,7 +16,7 @@ pub mod gamerunner;
 use crate::gamerunner::dispatcher::Message;
 use crate::http::metagame::Metagame;
 // use crate::http::server::{new_game, get_example_char, add_new_character, change_game_state, get_state_demo};
-use crate::http::server::start_server;
+use crate::http::server::{start_server};
 // use crate::http::renders::{index, create_game, game_view, no_session, new_session, add_npc, add_pc};
 use crate::http::messaging::start_message_stream;
 use crate::http::session::SessionMap;
@@ -28,30 +28,8 @@ async fn main() {
     env_logger::init();
     
     debug!("Beginning launch of Shadowrun Combat Manager");
-    let application_root = match std::env::current_dir()
-    {
-        Ok(application_root) => application_root,
-        Err(_) => {error!("Application has not been started in a valid filesystem context"); exit(-1);}
-    };
 
-    let mut templates = application_root.clone();
-    let mut errors = application_root.clone();
 
-    templates.push("resources");
-    templates.push("templates");
-
-    errors.push("resources");
-    errors.push("templates");
-    errors.push("error_pages");
-    let template_dirs = vec![templates, errors];
-    let mut templates = handlebars::Handlebars::new();
-    match load_templates(template_dirs, &mut templates)
-    {
-        Ok(templates) => templates,
-        Err(_) => {error!("Unable to load the application templates."); exit(-1);}
-    };
-
-    
     let (runner_sender, runner_receiver) = mpsc::channel::<Message>(10);
 
     // let (mut main_sender, mut main_receiver) = mpsc::channel::<MainMessages>(2);
@@ -63,7 +41,7 @@ async fn main() {
     let session_map = SessionMap::new();
     let game_state = Metagame::new(runner_sender);
 
-    start_server(templates).await;
+    start_server().await;
 
 }
 

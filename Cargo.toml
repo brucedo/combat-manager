@@ -22,6 +22,12 @@ features = [
 [dependencies.axum]
 version = "0.6.18"
 
+[dependencies.axum-macros]
+version = "0.3.7"
+
+[dependencies.tower]
+version = "0.4.13"
+
 [dependencies.serde]
 version = "1.0.167"
 

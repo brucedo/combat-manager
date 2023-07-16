@@ -8,9 +8,11 @@ use log::debug;
 use serde::Serialize;
 use tokio::sync::{mpsc::Sender, oneshot::channel};
 use tokio::sync::oneshot::Receiver as OneShotReceiver;
+use tower::ServiceBuilder;
 use uuid::Uuid;
 
-use crate::http::modelview::{model_view_render};
+use crate::http::modelview::{model_view_render, static_file_render};
+use crate::http::renders::{initialize_renders, index};
 use crate::http::state::State;
 use crate::{gamerunner::dispatcher::{Request, Message, Outcome, Roll}, http::{serde::{NewGame, InitiativeRoll}, metagame::Metagame},};
 
@@ -22,33 +24,20 @@ struct AppState<'a> {
 }
 
 
-async fn my_middleware<B>(
-    axum::extract::State(state): axum::extract::State<Arc<State<'_>>>,
-    // you can add more extractors here but the last
-    // extractor must implement `FromRequest` which
-    // `Request` does
-    request: axum::http::Request<B>,
-    next: axum::middleware::Next<B>,
-) -> axum::response::Response {
-    // do something with `request`...
 
-    let response = next.run(request).await;
-
-    // do something with `response`...
-
-    response
-}
-
-pub async fn start_server(templates: handlebars::Handlebars<'static>)
+pub async fn start_server()
 {
     debug!("start_server() called");
 
-    // let state = Arc::from(State { handlebars: handlebars::Handlebars::new() });
-    let temp = templates.clone();
-    let state = Arc::from(State { handlebars: temp });
+    let (templates, statics) = initialize_renders();
 
-    let app = Router::new().route("/", get(|| async { "ShadowRun The Game The Movie"}))
-        .route_layer(middleware::from_fn_with_state(state.clone(), model_view_render::<Body>))
+    let state = Arc::from(State { handlebars: templates, statics });
+
+    let app = Router::new().route("/", get(index))
+        .layer(
+            ServiceBuilder::new().layer(middleware::from_fn_with_state(state.clone(), model_view_render::<Body>))
+                .layer(middleware::from_fn_with_state(state.clone(), static_file_render::<Body>))
+        )
         .with_state(state);
 
     debug!("Attempting to start server on 0.0.0.0:8080");
