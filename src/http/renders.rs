@@ -8,42 +8,29 @@ use uuid::Uuid;
 use handlebars::{Handlebars, template};
 use tokio::sync::{oneshot::channel, mpsc::Sender};
 
-use crate::{gamerunner::dispatcher::{Message, Request, Outcome}, http::{session::NewSessionOutcome, models::NewGame}, tracker::character::Character};
+use crate::{gamerunner::dispatcher::{Message, Request, Outcome}, http::{session::NewSessionOutcome, models::NewGame}, tracker::character::Character, Configuration};
 
 use super::{models::{GameSummary, GMView, IndexModel, PlayerView, SimpleCharacterView, NewCharacter}, session::Session, metagame::Metagame, modelview::StaticView};
 
 
-pub fn initialize_renders() -> (Handlebars<'static>, HashMap<String, String>)
+pub fn initialize_renders(config: &Configuration) -> (Handlebars<'static>, HashMap<String, String>)
 {
-    let application_root = match std::env::current_dir()
-    {
-        Ok(application_root) => application_root,
-        Err(_) => {error!("Application has not been started in a valid filesystem context"); exit(-1);}
-    };
+    
+    // let mut templates = config.template_path.clone();
+    // let mut errors = config.template_path.clone();
+    // let mut statics = config.static_path.clone();
 
-    let mut templates = application_root.clone();
-    let mut errors = application_root.clone();
-    let mut statics = application_root.clone();
+    // // templates.push("templates");
 
-    templates.push("resources");
-    templates.push("templates");
+    // errors.push("templates");
+    // errors.push("error_pages");
 
-    errors.push("resources");
-    errors.push("templates");
-    errors.push("error_pages");
+    // statics.push("static");
 
-    statics.push("resources");
-    statics.push("static");
-
-    let template_dirs = vec![templates, errors];
     let mut templates = handlebars::Handlebars::new();
-    match load_templates(template_dirs, &mut templates)
-    {
-        Ok(templates) => templates,
-        Err(_) => {error!("Unable to load the application templates."); exit(-1);}
-    };
+    load_templates(&config.template_path, &mut templates);
 
-    let static_files = match load_statics(vec![statics])
+    let static_files = match load_statics(&config.static_path)
     {
         Ok(static_files) => static_files,
         Err(_) => {error!("Unable to load the application static files."); exit(-1);}
@@ -53,89 +40,208 @@ pub fn initialize_renders() -> (Handlebars<'static>, HashMap<String, String>)
     (templates, static_files)
 }
 
-fn load_statics(static_dirs: Vec<PathBuf>) -> Result<HashMap<String, String>, Error>
+fn load_statics(root_path: &PathBuf) -> Result<HashMap<String, String>, Error>
 {
     let mut static_store = HashMap::new();
     let mut valid_extensions = HashSet::new();
 
-        valid_extensions.insert(OsString::from("css"));
-        valid_extensions.insert(OsString::from("html"));
-        valid_extensions.insert(OsString::from("js"));
+    valid_extensions.insert(OsString::from("css"));
+    valid_extensions.insert(OsString::from("html"));
+    valid_extensions.insert(OsString::from("js"));
 
-    for static_dir in static_dirs
+    let statics_to_load = recursive_file_filter(root_path, &valid_extensions);
+
+    for static_file in statics_to_load
     {
-        debug!("Loading static text files from {}", static_dir.display());
+        debug!("Loading static text files from {}", static_file.display());
 
         
-        let static_files = read_text_file(&static_dir, &valid_extensions)?;
-        static_store.extend(static_files)
+        let static_files = read_text_file(&static_file)?;
+        static_store.insert(static_files.0, static_files.1);
 
     }
 
     return Ok(static_store);
 }
 
-fn load_templates(template_dirs: Vec<PathBuf>, handlebars: &mut handlebars::Handlebars) -> Result<(), Error>
+fn load_templates(root_path: &PathBuf, handlebars: &mut handlebars::Handlebars)
 {
     let mut valid_extensions = HashSet::new();
-        valid_extensions.insert(OsString::from("hbs"));
+    valid_extensions.insert(OsString::from("hbs"));
 
-    for template_dir in template_dirs
+    let hbs_ext = OsString::from("hbs");
+
+    let mut templates_to_load = recursive_file_filter(root_path, &valid_extensions);
+
+    // while template_dirs.len() > 0
+    // {
+    //     let path = template_dirs.pop().unwrap();
+
+    //     match path.read_dir()
+    //     {
+    //         Ok(dir_entries) => {
+    //             for result in dir_entries
+    //             {
+    //                 match result 
+    //                 {
+    //                     Ok(dir_entry) => {
+    //                         let fs_obj_path = dir_entry.path();
+
+    //                         if fs_obj_path.is_dir() { 
+    //                             template_dirs.push(fs_obj_path)
+    //                         }
+    //                         else if fs_obj_path.is_file() && fs_obj_path.extension().is_some() && fs_obj_path.extension().unwrap() == hbs_ext { 
+    //                             templates_to_load.push(fs_obj_path) 
+    //                         }
+    //                     },
+    //                     Err(_) => {error!("Encountered an IO error while attempting to read an object in directory {}", path.display())}
+    //                 }
+    //             }
+    //         },
+    //         Err(_) => {
+    //             error!("Encountered an IO error while attempting to read the contents of path {}", path.display())
+    //         }
+    //     }
+    // };
+
+    for template_path in templates_to_load
     {
+        match read_text_file(&template_path)
+        {
+            Ok((filename, contents)) => 
+            {
+                let name = match filename.find(".") {
+                    Some(position) => &filename[0..position],
+                    None => filename.as_str()
+                };
 
-        debug!("Loading handlebar template files found in {}", template_dir.display());
+                debug!("Registering template {}", name);
+
+                if let Err(_) = handlebars.register_template_string(name, contents) {
+                    error!("The Handlebars service could not read template {}, please check the formatting and try again.", filename);
+                }
+            },
+            Err(_) =>
+            {
+                error!("We were unable to load all of the template files correctly.  The application may not perform as expected.");
+            }
+        }
+    }
+
+    // for template_dir in template_dirs
+    // {
+
+    //     debug!("Loading handlebar template files found in {}", template_dir.display());
         
 
-        let templates = read_text_file(&template_dir, &valid_extensions)?;
-        for (fq_name, contents) in templates
-        {
-            let name = match fq_name.find(".") {
-                Some(position) => &fq_name[0..position],
-                None => fq_name.as_str()
-            };
+    //     let templates = read_text_files(&template_dir, &valid_extensions)?;
+    //     for (fq_name, contents) in templates
+    //     {
+    //         let name = match fq_name.find(".") {
+    //             Some(position) => &fq_name[0..position],
+    //             None => fq_name.as_str()
+    //         };
 
-            debug!("Registering template {}", name);
+    //         debug!("Registering template {}", name);
 
-            handlebars.register_template_string(name, contents);
-        }
+    //         handlebars.register_template_string(name, contents);
+    //     }
 
-    }
+    // }
 
-    Ok(())
 }
 
-fn read_text_file(in_directory: &PathBuf, filter_extensions: &HashSet<OsString>) -> Result<HashMap<String, String>, Error >
+fn recursive_file_filter(root_path: &PathBuf, extension_filter: &HashSet<OsString>) -> Vec<PathBuf>
 {
-    let mut text_files = HashMap::new();
+    let mut passing_files = Vec::<PathBuf>::new();
+    let mut directory_stack = vec![root_path.clone()];
 
-    let filtered_paths = in_directory.read_dir()?
-            .filter(|rd| rd.is_ok())
-            .map(|rd| rd.unwrap())
-            .filter(|de| de.path().is_file()  && de.path().extension().is_some() && filter_extensions.contains(de.path().extension().unwrap()))
-            .collect::<Vec<DirEntry>>();
-
-    for path in filtered_paths
+    while directory_stack.len() > 0
     {
-        debug!("Loading template {}", path.file_name().to_str().unwrap());
-        match (path.file_name().into_string(), fs::read_to_string(path.path()))
-        {
-            (Ok(fq_name), Ok(contents)) => {
-                
-                text_files.insert(fq_name, contents)
-                
-            }
-            (Err(e), _) => {
-                return Err(Error::new(ErrorKind::Unsupported, "Could not convert filename into valid UTF-8 encoding."));
-            }
-            (_, Err(e)) => { 
-                return Err(e);
-            }
-        };
-            
-    }
+        let path = directory_stack.pop().unwrap();
 
-    return Ok(text_files);
+        match path.read_dir()
+        {
+            Ok(dir_entries) => {
+                for result in dir_entries
+                {
+                    match result 
+                    {
+                        Ok(dir_entry) => {
+                            let fs_obj_path = dir_entry.path();
+
+                            if fs_obj_path.is_dir() { 
+                                directory_stack.push(fs_obj_path)
+                            }
+                            else if fs_obj_path.is_file() && fs_obj_path.extension().is_some() && extension_filter.contains(fs_obj_path.extension().unwrap()) { 
+                                passing_files.push(fs_obj_path) 
+                            }
+                        },
+                        Err(_) => {error!("Encountered an IO error while attempting to read an object in directory {}", path.display())}
+                    }
+                }
+            },
+            Err(_) => {
+                error!("Encountered an IO error while attempting to read the contents of path {}", path.display())
+            }
+        }
+    };
+
+    passing_files
 }
+
+fn read_text_file(file_path: &PathBuf) -> Result<(String, String), Error>
+{
+    match (file_path.file_name(), fs::read_to_string(file_path))
+    {
+        (Some(filename), Ok(contents)) => {
+            if let Ok(string_name) = filename.to_os_string().into_string()
+            {
+                Ok((string_name, contents))
+            }
+            else
+            {
+                Err(Error::new(ErrorKind::Unsupported, "The filename could not be converted into a standard UTF-8 string."))
+            }
+        }, 
+        (_, _) => {
+            Err(Error::new(ErrorKind::InvalidData, "Something went pretty catastrophically wrong with a file read.  Are you sure you're cut out for this?"))
+        }
+    }
+}
+
+// fn read_text_files(in_directory: &PathBuf, filter_extensions: &HashSet<OsString>) -> Result<HashMap<String, String>, Error >
+// {
+//     let mut text_files = HashMap::new();
+
+//     let filtered_paths = in_directory.read_dir()?
+//             .filter(|rd| rd.is_ok())
+//             .map(|rd| rd.unwrap())
+//             .filter(|de| de.path().is_file()  && de.path().extension().is_some() && filter_extensions.contains(de.path().extension().unwrap()))
+//             .collect::<Vec<DirEntry>>();
+
+//     for path in filtered_paths
+//     {
+//         debug!("Loading template {}", path.file_name().to_str().unwrap());
+//         match (path.file_name().into_string(), fs::read_to_string(path.path()))
+//         {
+//             (Ok(fq_name), Ok(contents)) => {
+                
+//                 text_files.insert(fq_name, contents)
+                
+//             }
+//             (Err(e), _) => {
+//                 return Err(Error::new(ErrorKind::Unsupported, "Could not convert filename into valid UTF-8 encoding."));
+//             }
+//             (_, Err(e)) => { 
+//                 return Err(e);
+//             }
+//         };
+            
+//     }
+
+//     return Ok(text_files);
+// }
 
 #[debug_handler]
 pub async fn index() -> Response<axum::body::Empty<Bytes>>

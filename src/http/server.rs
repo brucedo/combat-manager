@@ -1,16 +1,19 @@
 
+use std::net::{SocketAddr, IpAddr};
+use std::process::exit;
 use std::sync::Arc;
 
 use axum::body::Body;
 use axum::{Router, middleware};
 use axum::routing::get;
-use log::debug;
+use log::{debug, error};
 use serde::Serialize;
 use tokio::sync::{mpsc::Sender, oneshot::channel};
 use tokio::sync::oneshot::Receiver as OneShotReceiver;
 use tower::ServiceBuilder;
 use uuid::Uuid;
 
+use crate::Configuration;
 use crate::http::modelview::{model_view_render, static_file_render};
 use crate::http::renders::{initialize_renders, index};
 use crate::http::state::State;
@@ -25,23 +28,31 @@ struct AppState<'a> {
 
 
 
-pub async fn start_server()
+pub async fn start_server(config: &Configuration)
 {
     debug!("start_server() called");
 
-    let (templates, statics) = initialize_renders();
+    let (templates, statics) = initialize_renders(config);
 
     let state = Arc::from(State { handlebars: templates, statics });
 
     let app = Router::new().route("/", get(index))
         .layer(
-            ServiceBuilder::new().layer(middleware::from_fn_with_state(state.clone(), model_view_render::<Body>))
+            ServiceBuilder::new()
+                .layer(middleware::from_fn_with_state(state.clone(), model_view_render::<Body>))
                 .layer(middleware::from_fn_with_state(state.clone(), static_file_render::<Body>))
         )
         .with_state(state);
 
+    let (ip_addr, port) = match (config.bind_addr.parse::<IpAddr>(), config.bind_port.parse::<u16>())
+    {
+        (Ok(addr), Ok(port)) => (addr, port),
+        (_, _) => {error!("Config bind_addr and bind_port settings could not be parsed into a valid IpAddr and port number!"); exit(-1);}
+    };
+    
+
     debug!("Attempting to start server on 0.0.0.0:8080");
-    axum::Server::bind(&"0.0.0.0:8080".parse().unwrap())
+    axum::Server::bind(&SocketAddr::new(ip_addr, port))
         .serve(app.into_make_service())
         .await
         .unwrap()

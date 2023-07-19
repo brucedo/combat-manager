@@ -40,6 +40,9 @@ features = [
     "serde",             # Enable serde-based serialization/deserialization
 ]
 
+[dependencies.toml]
+version = "0.7.6"
+
 [dependencies.parking_lot]
 version = "0.12.1"
 

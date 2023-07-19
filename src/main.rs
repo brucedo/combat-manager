@@ -29,6 +29,13 @@ async fn main() {
     
     debug!("Beginning launch of Shadowrun Combat Manager");
 
+    let config = Configuration {
+        static_path: PathBuf::from("resources/static"),
+        template_path: PathBuf::from("resources/templates"),
+        bind_addr: String::from("0.0.0.0"),
+        bind_port: String::from("8080")
+    };
+
 
     let (runner_sender, runner_receiver) = mpsc::channel::<Message>(10);
 
@@ -41,62 +48,21 @@ async fn main() {
     let session_map = SessionMap::new();
     let game_state = Metagame::new(runner_sender);
 
-    start_server().await;
+    start_server(&config).await;
 
 }
 
-
-
-fn load_templates(template_dirs: Vec<PathBuf>, handlebars: &mut handlebars::Handlebars) -> Result<(), Error>
+pub struct Configuration
 {
-    // let mut handlebars = handlebars::Handlebars::new();
-
-    for template_dir in template_dirs
-    {
-
-        debug!("Loading handlebar template files found in {}", template_dir.display());
-
-        let templates = template_dir.read_dir()?
-            .filter(|rd| rd.is_ok())
-            .map(|rd| rd.unwrap())
-            .filter(|de| de.path().is_file()  && de.path().extension().is_some() && de.path().extension().unwrap() == "hbs")
-            .collect::<Vec<DirEntry>>();
-        
-        for entry in templates
-        {
-            debug!("Loading template {}", entry.file_name().to_str().unwrap());
-            match (entry.file_name().into_string(), fs::read_to_string(entry.path()))
-            {
-                (Ok(fq_name), Ok(contents)) => {
-                    let name = match fq_name.find(".")
-                    {
-                        Some(prefix) => &fq_name[0..prefix],
-                        None => &fq_name
-                    };                
-
-                    if let Err(template_err) = handlebars.register_template_string(name, contents)
-                    {
-                        error!("An error occurred while loading template {}, reason: {}", fq_name, template_err.reason())
-                    }
-                }
-                (Err(e), _) => {
-
-                }
-                (_, Err(e)) => { 
-                    return Err(e);
-                }
-            };
-                
-        }
-
-    }
-
-    Ok(())
+    pub static_path: PathBuf,
+    pub template_path: PathBuf,
+    pub bind_addr: String,
+    pub bind_port: String,
 }
 
-#[derive(PartialEq)]
-pub enum MainMessages
-{
-    Quit,
-    Reload,
-}
+// #[derive(PartialEq)]
+// pub enum MainMessages
+// {
+//     Quit,
+//     Reload,
+// }
