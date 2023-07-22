@@ -15,17 +15,6 @@ use super::{models::{GameSummary, GMView, IndexModel, PlayerView, SimpleCharacte
 
 pub fn initialize_renders(config: &Configuration) -> (Handlebars<'static>, HashMap<String, String>)
 {
-    
-    // let mut templates = config.template_path.clone();
-    // let mut errors = config.template_path.clone();
-    // let mut statics = config.static_path.clone();
-
-    // // templates.push("templates");
-
-    // errors.push("templates");
-    // errors.push("error_pages");
-
-    // statics.push("static");
 
     let mut templates = handlebars::Handlebars::new();
     load_templates(&config.template_path, &mut templates);
@@ -69,40 +58,7 @@ fn load_templates(root_path: &PathBuf, handlebars: &mut handlebars::Handlebars)
     let mut valid_extensions = HashSet::new();
     valid_extensions.insert(OsString::from("hbs"));
 
-    let hbs_ext = OsString::from("hbs");
-
-    let mut templates_to_load = recursive_file_filter(root_path, &valid_extensions);
-
-    // while template_dirs.len() > 0
-    // {
-    //     let path = template_dirs.pop().unwrap();
-
-    //     match path.read_dir()
-    //     {
-    //         Ok(dir_entries) => {
-    //             for result in dir_entries
-    //             {
-    //                 match result 
-    //                 {
-    //                     Ok(dir_entry) => {
-    //                         let fs_obj_path = dir_entry.path();
-
-    //                         if fs_obj_path.is_dir() { 
-    //                             template_dirs.push(fs_obj_path)
-    //                         }
-    //                         else if fs_obj_path.is_file() && fs_obj_path.extension().is_some() && fs_obj_path.extension().unwrap() == hbs_ext { 
-    //                             templates_to_load.push(fs_obj_path) 
-    //                         }
-    //                     },
-    //                     Err(_) => {error!("Encountered an IO error while attempting to read an object in directory {}", path.display())}
-    //                 }
-    //             }
-    //         },
-    //         Err(_) => {
-    //             error!("Encountered an IO error while attempting to read the contents of path {}", path.display())
-    //         }
-    //     }
-    // };
+    let templates_to_load = recursive_file_filter(root_path, &valid_extensions);
 
     for template_path in templates_to_load
     {
@@ -127,27 +83,6 @@ fn load_templates(root_path: &PathBuf, handlebars: &mut handlebars::Handlebars)
             }
         }
     }
-
-    // for template_dir in template_dirs
-    // {
-
-    //     debug!("Loading handlebar template files found in {}", template_dir.display());
-        
-
-    //     let templates = read_text_files(&template_dir, &valid_extensions)?;
-    //     for (fq_name, contents) in templates
-    //     {
-    //         let name = match fq_name.find(".") {
-    //             Some(position) => &fq_name[0..position],
-    //             None => fq_name.as_str()
-    //         };
-
-    //         debug!("Registering template {}", name);
-
-    //         handlebars.register_template_string(name, contents);
-    //     }
-
-    // }
 
 }
 
@@ -209,39 +144,6 @@ fn read_text_file(file_path: &PathBuf) -> Result<(String, String), Error>
         }
     }
 }
-
-// fn read_text_files(in_directory: &PathBuf, filter_extensions: &HashSet<OsString>) -> Result<HashMap<String, String>, Error >
-// {
-//     let mut text_files = HashMap::new();
-
-//     let filtered_paths = in_directory.read_dir()?
-//             .filter(|rd| rd.is_ok())
-//             .map(|rd| rd.unwrap())
-//             .filter(|de| de.path().is_file()  && de.path().extension().is_some() && filter_extensions.contains(de.path().extension().unwrap()))
-//             .collect::<Vec<DirEntry>>();
-
-//     for path in filtered_paths
-//     {
-//         debug!("Loading template {}", path.file_name().to_str().unwrap());
-//         match (path.file_name().into_string(), fs::read_to_string(path.path()))
-//         {
-//             (Ok(fq_name), Ok(contents)) => {
-                
-//                 text_files.insert(fq_name, contents)
-                
-//             }
-//             (Err(e), _) => {
-//                 return Err(Error::new(ErrorKind::Unsupported, "Could not convert filename into valid UTF-8 encoding."));
-//             }
-//             (_, Err(e)) => { 
-//                 return Err(e);
-//             }
-//         };
-            
-//     }
-
-//     return Ok(text_files);
-// }
 
 #[debug_handler]
 pub async fn index() -> Response<axum::body::Empty<Bytes>>

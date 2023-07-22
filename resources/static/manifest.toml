@@ -1,0 +1,8 @@
+[index.html]
+path = index.html
+MIME = text/html
+
+[scm.css]
+path = scm.css
+MIME = text/css
+

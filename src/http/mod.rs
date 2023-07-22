@@ -8,3 +8,4 @@ pub mod metagame;
 pub mod messaging;
 pub mod modelview;
 pub mod state;
+pub mod statics;
