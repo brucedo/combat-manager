@@ -1,5 +1,7 @@
-use std::{path::PathBuf, ffi::OsString, collections::HashMap};
+use std::{path::PathBuf, ffi::OsString, collections::HashMap, fs};
 
+use axum::body::Bytes;
+use log::error;
 use toml::Table;
 
 
@@ -13,7 +15,7 @@ pub struct Statics
 pub struct StaticEntry
 {
     mime_type: String,
-    contents: Option<Vec<u8>>,
+    contents: Option<Bytes>,
     filename: OsString,
 }
 
@@ -29,11 +31,55 @@ impl Statics
         let mut manifest_path = static_root.clone();
         manifest_path.push("manifest.toml");
 
-        let manifest = Statics::read_manifest(&manifest_path)?;
+        let mut static_entries = HashMap::new();
+
+        for (table_name, table_data) in Statics::read_manifest(&manifest_path)?
+        {
+            match table_data
+            {
+                toml::Value::Table(static_entry) => {
+                    match (static_entry.get("path"), static_entry.get("MIME")) {
+                        (Some(toml::Value::String(path)), Some(toml::Value::String(mime))) => {
+                            static_entries.insert(table_name, StaticEntry{ mime_type: mime.to_owned(), contents: None, filename: OsString::from(path) });
+                        },
+                        _ => {return Err(Error::CouldNotLoadManifestFile);}
+                    }
+                },
+                _ => {return Err(Error::CouldNotLoadManifestFile);}
+            }
+        }
         
         let statics = Statics{static_root: static_root, cache: HashMap::new()};
 
         return Ok(statics);
+    }
+
+
+    pub fn get_resource(&mut self, resource_file_name: &str) -> Option<Bytes>
+    {
+        let entry = self.cache.get_mut(resource_file_name)?;
+
+        match &entry.contents
+        {
+            Some(data) => { Some(data.clone()) },
+            None => {
+                let data = Statics::read_file(&self.static_root, &entry.filename)?;
+                entry.contents = Some(data.clone());
+                Some(data)
+            }
+        }
+    }
+
+    fn read_file(root: &PathBuf, path: &OsString) -> Option<Bytes>
+    {
+        let target = root.join(path);
+        match fs::read(&target)
+        {
+            Ok(data) => { 
+                Some(Bytes::copy_from_slice(&data))
+            },
+            Err(e) => { error!("A file {} listed in the manifest could not be read.  Reason: {}", target.display(), e.to_string()); None}
+        }
     }
 
 
