@@ -10,47 +10,40 @@ use tokio::sync::{oneshot::channel, mpsc::Sender};
 
 use crate::{gamerunner::dispatcher::{Message, Request, Outcome}, http::{session::NewSessionOutcome, models::NewGame}, tracker::character::Character, Configuration};
 
-use super::{models::{GameSummary, GMView, IndexModel, PlayerView, SimpleCharacterView, NewCharacter}, session::Session, metagame::Metagame, modelview::StaticView};
+use super::{models::{GameSummary, GMView, IndexModel, PlayerView, SimpleCharacterView, NewCharacter}, session::Session, metagame::Metagame, modelview::StaticView, statics::Statics};
 
 
-pub fn initialize_renders(config: &Configuration) -> (Handlebars<'static>, HashMap<String, String>)
+pub fn initialize_renders(config: &Configuration) -> (Handlebars<'static>, Statics)
 {
 
     let mut templates = handlebars::Handlebars::new();
-    load_templates(&config.template_path, &mut templates);
-
-    let static_files = match load_statics(&config.static_path)
+    load_templates(&config.template_path, &mut templates);    
+    
+    match Statics::with_root(&config.static_path)
     {
-        Ok(static_files) => static_files,
-        Err(_) => {error!("Unable to load the application static files."); exit(-1);}
-    };
-
-
-    (templates, static_files)
-}
-
-fn load_statics(root_path: &PathBuf) -> Result<HashMap<String, String>, Error>
-{
-    let mut static_store = HashMap::new();
-    let mut valid_extensions = HashSet::new();
-
-    valid_extensions.insert(OsString::from("css"));
-    valid_extensions.insert(OsString::from("html"));
-    valid_extensions.insert(OsString::from("js"));
-
-    let statics_to_load = recursive_file_filter(root_path, &valid_extensions);
-
-    for static_file in statics_to_load
-    {
-        debug!("Loading static text files from {}", static_file.display());
-
-        
-        let static_files = read_text_file(&static_file)?;
-        static_store.insert(static_files.0, static_files.1);
-
+        Ok(statics) => (templates, statics),
+        Err(super::statics::Error::CouldNotLoadManifestFile) => {
+            error!("Could not load manifest file from {}", &config.static_path.display());
+            panic!("Could not load manifest file.");
+        },
+        Err(super::statics::Error::FilePathNotStringable) => {
+            error!("Some component of the path could not be rendered into string form.");
+            panic!("Some component of the path could not be rendered into string form.");
+        }
+        Err(super::statics::Error::ManifestNotExists) => {
+            error!("The manifest.toml file was not found in the expected location {}/static/manifest.toml.", &config.static_path.display());
+            panic!("The manifest.toml file was not found.");
+        }
+        Err(super::statics::Error::StaticDirNotExists) => {
+            error!("The directory {}/static does not exist", &config.static_path.display());
+            panic!("The static directory does not exist.")
+        }
+        Err(super::statics::Error::CouldNotLoadStaticFile(f)) => {
+            error!("A static file could not be loaded: {}", f);
+            panic!("A static file could not be loaded.");
+        }
     }
-
-    return Ok(static_store);
+    
 }
 
 fn load_templates(root_path: &PathBuf, handlebars: &mut handlebars::Handlebars)

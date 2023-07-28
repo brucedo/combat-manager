@@ -36,13 +36,12 @@ pub async fn static_file_render<B>
     {
         None => {response},
         Some(static_view) => {
-            if let Some(response_body) = state.statics.get(&static_view.view)
+            if let (Some(response_body), Some(mime_type)) = 
+                (state.statics.get_resource(&static_view.view), state.statics.get_mime(&static_view.view))
             {
-                let owned_body = (*response_body).clone();
-                
                 // axum::body::boxed(axum::body::Full::from(owned_body));
-                Response::builder().header("Content-Type", "text/html; charset=UTF-8")
-                    .body( axum::body::boxed(axum::body::Full::from(axum::body::Bytes::from(owned_body))))
+                Response::builder().header("Content-Type", mime_type)
+                    .body( axum::body::boxed(axum::body::Full::from(axum::body::Bytes::from(response_body))))
                     .unwrap()
             }
             else
