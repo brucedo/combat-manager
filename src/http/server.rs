@@ -1,42 +1,49 @@
 
+use std::collections::HashMap;
 use std::net::{SocketAddr, IpAddr};
 use std::process::exit;
 use std::sync::Arc;
 
-use axum::body::Body;
+use axum::body::{Body, Bytes};
+use axum::http::Request;
+use axum::middleware::Next;
+use axum::response::Response;
 use axum::{Router, middleware};
 use axum::routing::get;
+use axum_extra::extract::CookieJar;
 use log::{debug, error};
 use serde::Serialize;
 use tokio::sync::{mpsc::Sender, oneshot::channel};
 use tokio::sync::oneshot::Receiver as OneShotReceiver;
 use tower::ServiceBuilder;
-use uuid::Uuid;
+use uuid::{Uuid, uuid};
 
 use crate::Configuration;
 use crate::http::modelview::{model_view_render, static_file_render};
-use crate::http::renders::{initialize_renders, index};
+use crate::http::renders::{initialize_renders, index, static_resources, display_registration_form};
 use crate::http::state::State;
-use crate::{gamerunner::dispatcher::{Request, Message, Outcome, Roll}, http::{serde::{NewGame, InitiativeRoll}, metagame::Metagame},};
+use crate::{gamerunner::dispatcher::{Message, Outcome, Roll}, http::{serde::{NewGame, InitiativeRoll}, metagame::Metagame},};
 
+use super::modelview::{StaticView, ModelView};
 use super::serde::{Character, AddedCharacterJson, NewState, BeginCombat};
 
-#[derive(Clone)]
-struct AppState<'a> {
-    pub handlebars: handlebars::Handlebars<'a>,
-}
 
-
-
-pub async fn start_server(config: &Configuration)
+pub async fn start_server(config: &Configuration, game_channel: Sender<Message>)
 {
     debug!("start_server() called");
 
     let (templates, statics) = initialize_renders(config);
 
-    let state = Arc::from(State { handlebars: templates, statics });
+    let state = Arc::from(State { handlebars: templates, statics, channel: game_channel });
 
     let app = Router::new().route("/", get(index))
+        .route_layer
+        (
+            ServiceBuilder::new()
+            .layer(middleware::from_fn_with_state(state.clone(), validate_registration::<Body>))
+        )
+        .route("/static/*resource", get(static_resources))
+        .route("/register", get(display_registration_form))
         .layer(
             ServiceBuilder::new()
                 .layer(middleware::from_fn_with_state(state.clone(), model_view_render::<Body>))
@@ -57,6 +64,71 @@ pub async fn start_server(config: &Configuration)
         .await
         .unwrap()
 }
+
+async fn validate_registration<B>(
+    axum::extract::State(state): axum::extract::State<Arc<State<'_>>>, 
+    cookie_jar: CookieJar, 
+    request: Request<B>, 
+    next: Next<B>
+) -> Response
+{
+
+    let cookie = if let Some(cookie) = cookie_jar.get("player_id"){cookie}
+    else
+    {
+        return Response::builder()
+            .status(302)
+            .header("Location", "/register")
+            .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
+    };
+
+    let player_id = if let Ok(player_id) = Uuid::parse_str(cookie.value()) {player_id}
+    else
+    {
+        return Response::builder()
+            .status(302)
+            .header("Location", "/register")
+            .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
+    };
+
+    let (reply_sender, reply_receiver) = tokio::sync::oneshot::channel();
+    let msg = Message { game_id: None, player_id: Some(player_id), reply_channel: reply_sender, msg: crate::gamerunner::dispatcher::Request::IsRegistered };
+
+    if let Err(_) = state.channel.clone().send(msg).await {
+        let mut error_message = HashMap::new();
+        error_message.insert(String::from("error"), String::from("The GameRunner messaging channel has broken.  The administrator will likely need to restart the system."));
+        return Response::builder().extension(ModelView { view: String::from("500.html"), model: error_message })
+            .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
+    }
+
+    match reply_receiver.await
+    {
+        Ok(Outcome::PlayerExists) =>
+        {
+            return next.run(request).await
+        },
+        Ok(Outcome::PlayerNotExists) => {
+            Response::builder()
+            .status(302)
+            .header("Location", "/register")
+            .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
+        },
+        Ok(_) => {
+            let mut error_message = HashMap::new();
+            error_message.insert(String::from("error"), String::from("The GameRunner is returning unreasonable responses for the questions asked.  Likely it has achieved sentience.  I would run."));
+            Response::builder().extension(ModelView { view: String::from("500.html"), model: error_message })
+                .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
+        }
+        _ => {
+            let mut error_message = HashMap::new();
+            error_message.insert(String::from("error"), String::from("The GameRunner messaging channel has broken.  The administrator will likely need to restart the system."));
+            Response::builder().extension(ModelView { view: String::from("500.html"), model: error_message })
+                .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
+        }
+        }
+}
+
+
 
 // #[post("/api/game/new")]
 // pub async fn new_game(state: &State<Metagame<'_>>) -> Result<Json<NewGame>, (Status, String)>

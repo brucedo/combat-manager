@@ -25,6 +25,10 @@ version = "0.6.18"
 [dependencies.axum-macros]
 version = "0.3.7"
 
+[dependencies.axum-extra]
+version = "0.7.5"
+features = ["cookie"]
+
 [dependencies.tower]
 version = "0.4.13"
 

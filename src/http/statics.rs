@@ -1,4 +1,4 @@
-use std::{path::PathBuf, ffi::OsString, collections::HashMap, fs};
+use std::{path::PathBuf, collections::HashMap, fs};
 
 use axum::body::Bytes;
 use log::{error, debug};
@@ -7,16 +7,13 @@ use toml::Table;
 
 pub struct Statics
 {
-    static_root: PathBuf,
     cache: HashMap<String, StaticEntry>, 
-
 }
 
 pub struct StaticEntry
 {
     mime_type: String,
     contents: Bytes,
-    filename: PathBuf,
 }
 
 impl Statics
@@ -53,7 +50,7 @@ impl Statics
 
                             debug!("Storing file data for key {}, MIME type {}", table_name, mime);
 
-                            static_entries.insert(table_name, StaticEntry{ mime_type: mime.to_owned(), contents: data, filename: static_path });
+                            static_entries.insert(table_name, StaticEntry{ mime_type: mime.to_owned(), contents: data });
                         },
                         _ => {
                             error!("Table data table type did not have expected keys path and mime.");
@@ -68,7 +65,7 @@ impl Statics
             }
         }
         
-        let statics = Statics{static_root: static_root.clone(), cache: static_entries};
+        let statics = Statics{cache: static_entries};
 
         return Ok(statics);
     }

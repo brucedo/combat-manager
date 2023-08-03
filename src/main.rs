@@ -45,10 +45,10 @@ async fn main() {
     // tokio::spawn(start_server());
     tokio::spawn(async move {gamerunner::game_runner(runner_receiver).await;});
 
-    let session_map = SessionMap::new();
-    let game_state = Metagame::new(runner_sender);
+    // let session_map = SessionMap::new();
+    // let game_state = Metagame::new(runner_sender);
 
-    start_server(&config).await;
+    start_server(&config, runner_sender).await;
 
 }
 

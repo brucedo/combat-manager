@@ -24,6 +24,7 @@ pub enum Request
     New,
     Delete,
     NewPlayer,
+    IsRegistered,
     JoinGame,
     AddCharacter(Character),
     GetFullCast,
@@ -55,8 +56,10 @@ pub enum Request
 pub enum Outcome
 {
     NewPlayer(NewPlayer),
-    Summaries(Vec<(Uuid, String)>),
+    Summaries(Vec<(Uuid, String)>),    
     JoinedGame(GameState),
+    PlayerExists,
+    PlayerNotExists,
     Created(Uuid),
     CastList(Vec<Arc<Character>>),
     Found(Option<Arc<Character>>),

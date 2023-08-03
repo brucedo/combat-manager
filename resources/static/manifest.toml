@@ -6,3 +6,6 @@ MIME = "text/html"
 path = "scm.css"
 MIME = "text/css"
 
+["register.html"]
+path = "register.html"
+MIME = "text/html"

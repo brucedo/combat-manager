@@ -1,7 +1,7 @@
 
 use std::{process::exit, path::PathBuf, fs::{DirEntry, self}, collections::{HashMap, HashSet}, ffi::{OsString, OsStr}, io::ErrorKind};
 use std::io::Error;
-use axum::{response::Response, body::Bytes};
+use axum::{response::Response, body::Bytes, extract::Path};
 use axum_macros::debug_handler;
 use log::{debug, error};
 use uuid::Uuid;
@@ -146,24 +146,22 @@ pub async fn index() -> Response<axum::body::Empty<Bytes>>
         .extension(StaticView{ view: String::from("index.html") })
         .body(axum::body::Empty::<Bytes>::new()).unwrap()
 }
-// // #[get("/")]
-// pub async fn index(state: &State<Metagame<'_>>, session: Session) -> Result<Template, Error>
-// {
 
-//     let lock = state.game_details.read();
-//     let mut summaries = Vec::<GameSummary>::new();
+pub async fn static_resources(resource: Path<String>) -> Response<axum::body::Empty<Bytes>>
+{
+    Response::builder()
+        .extension(StaticView{view: resource.0})
+        .body(axum::body::Empty::<Bytes>::new()).unwrap()
+}
 
-//     for (_id, details) in lock.iter()
-//     {
-//         summaries.push(GameSummary{ game_name: details.game_name.clone(), url: details.game_url.to_string(), gm: details.gm_id })
-//     }
-
-
-//     let model = IndexModel { player_handle: &session.handle_as_ref(), summaries  };
-
-
-//     return Ok(Template::render("index", model));
-// }
+#[debug_handler]
+pub async fn display_registration_form() -> Response<axum::body::Empty<Bytes>>
+{
+    
+    Response::builder()
+        .extension(StaticView{view: String::from("register.html")})
+        .body(axum::body::Empty::<Bytes>::new()).unwrap()
+}
 
 // #[post("/game", data = "<new_game>")]
 // pub async fn create_game(state: &State<Metagame<'_>>, session: Session, new_game: Form<NewGame<'_>>) -> Result<Redirect, Error>
