@@ -1,8 +1,15 @@
 use std::sync::Arc;
 
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::tracker::character::{Character, Metatypes};
+
+#[derive(Deserialize)]
+pub struct Registration 
+{
+    pub player_handle: String
+}
 
 // #[derive(Serialize, Deserialize)]
 pub struct IndexModel<'r>

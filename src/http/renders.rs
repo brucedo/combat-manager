@@ -1,7 +1,8 @@
 
 use std::{process::exit, path::PathBuf, fs::{DirEntry, self}, collections::{HashMap, HashSet}, ffi::{OsString, OsStr}, io::ErrorKind};
 use std::io::Error;
-use axum::{response::Response, body::Bytes, extract::Path};
+use axum::{response::Response, body::Bytes, extract::{Path, State}, Form};
+use axum_extra::extract::{CookieJar, cookie::Cookie};
 use axum_macros::debug_handler;
 use log::{debug, error};
 use uuid::Uuid;
@@ -10,7 +11,7 @@ use tokio::sync::{oneshot::channel, mpsc::Sender};
 
 use crate::{gamerunner::dispatcher::{Message, Request, Outcome}, http::{session::NewSessionOutcome, models::NewGame}, tracker::character::Character, Configuration};
 
-use super::{models::{GameSummary, GMView, IndexModel, PlayerView, SimpleCharacterView, NewCharacter}, session::Session, metagame::Metagame, modelview::StaticView, statics::Statics};
+use super::{models::{GameSummary, GMView, IndexModel, PlayerView, SimpleCharacterView, NewCharacter, Registration}, session::Session, metagame::Metagame, modelview::{StaticView, ModelView}, statics::Statics};
 
 
 pub fn initialize_renders(config: &Configuration) -> (Handlebars<'static>, Statics)
@@ -154,13 +155,44 @@ pub async fn static_resources(resource: Path<String>) -> Response<axum::body::Em
         .body(axum::body::Empty::<Bytes>::new()).unwrap()
 }
 
-#[debug_handler]
 pub async fn display_registration_form() -> Response<axum::body::Empty<Bytes>>
 {
-    
+
     Response::builder()
         .extension(StaticView{view: String::from("register.html")})
         .body(axum::body::Empty::<Bytes>::new()).unwrap()
+}
+
+pub async fn register_player(state: State<crate::http::state::State<'_>>, mut cookies: CookieJar, form_data: Form<Registration>) -> Response<axum::body::Empty<Bytes>>
+{
+    let player_name = form_data.0.player_handle;
+
+
+    let (game_sender, game_receiver) = channel();
+    let msg = Message { game_id: None, player_id: None, reply_channel: game_sender, msg: Request::NewPlayer };
+
+    if let Err(e) = state.channel.clone().send(msg).await
+    {
+        let mut error = HashMap::new();
+        error.insert(String::from("error"), String::from("The GameRunner channel errored out.  The administrator will likely need to restart the system."));
+        return Response::builder()
+            .extension(ModelView{ view: String::from("500.html"), model: error })
+            .body(axum::body::Empty::<Bytes>::new()).unwrap();
+    }
+
+    match game_receiver.await {
+        Ok(Outcome::NewPlayer(player_id)) => {
+            cookies.add(Cookie::new("player_id", value));
+            
+        },
+        Err(_) => {
+            let mut error = HashMap::new();
+            error.insert(String::from("error"), String::from("The response channel to your registration request errored out.  The administrator will likely need to retart the system."));
+            return Response::builder()
+                .extension(ModelView{ view: String::from("500.html"), model: error })
+                .body(axum::body::Empty::<Bytes>::new()).unwrap();
+        },
+    }
 }
 
 // #[post("/game", data = "<new_game>")]
