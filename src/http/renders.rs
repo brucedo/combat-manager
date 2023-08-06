@@ -1,7 +1,7 @@
 
-use std::{process::exit, path::PathBuf, fs::{DirEntry, self}, collections::{HashMap, HashSet}, ffi::{OsString, OsStr}, io::ErrorKind};
+use std::{process::exit, path::PathBuf, fs::{DirEntry, self}, collections::{HashMap, HashSet}, ffi::{OsString, OsStr}, io::ErrorKind, sync::Arc};
 use std::io::Error;
-use axum::{response::Response, body::Bytes, extract::{Path, State}, Form};
+use axum::{response::{Response, Redirect}, body::Bytes, extract::{Path, State}, Form};
 use axum_extra::extract::{CookieJar, cookie::Cookie};
 use axum_macros::debug_handler;
 use log::{debug, error};
@@ -142,7 +142,7 @@ fn read_text_file(file_path: &PathBuf) -> Result<(String, String), Error>
 #[debug_handler]
 pub async fn index() -> Response<axum::body::Empty<Bytes>>
 {
-    
+    debug!("Request for index received.");
     Response::builder()
         .extension(StaticView{ view: String::from("index.html") })
         .body(axum::body::Empty::<Bytes>::new()).unwrap()
@@ -157,40 +157,54 @@ pub async fn static_resources(resource: Path<String>) -> Response<axum::body::Em
 
 pub async fn display_registration_form() -> Response<axum::body::Empty<Bytes>>
 {
-
+    debug!("Received request to register new player");
     Response::builder()
         .extension(StaticView{view: String::from("register.html")})
         .body(axum::body::Empty::<Bytes>::new()).unwrap()
 }
 
-pub async fn register_player(state: State<crate::http::state::State<'_>>, mut cookies: CookieJar, form_data: Form<Registration>) -> Response<axum::body::Empty<Bytes>>
+// #[debug_handler]
+pub async fn register_player(state: State<Arc<crate::http::state::State<'_>>>, cookies: CookieJar, _form_data: Form<Registration>) -> 
+Result<(CookieJar, Redirect), Response<axum::body::Empty<Bytes>>>
 {
-    let player_name = form_data.0.player_handle;
-
+    // let player_name = form_data.0.player_handle;
+    debug!("Processing POST to register request.");
 
     let (game_sender, game_receiver) = channel();
     let msg = Message { game_id: None, player_id: None, reply_channel: game_sender, msg: Request::NewPlayer };
 
-    if let Err(e) = state.channel.clone().send(msg).await
+    if let Err(_) = state.channel.clone().send(msg).await
     {
+        debug!("Register player message sent and failed");
         let mut error = HashMap::new();
         error.insert(String::from("error"), String::from("The GameRunner channel errored out.  The administrator will likely need to restart the system."));
-        return Response::builder()
+        return Err(Response::builder()
             .extension(ModelView{ view: String::from("500.html"), model: error })
-            .body(axum::body::Empty::<Bytes>::new()).unwrap();
+            .body(axum::body::Empty::<Bytes>::new()).unwrap());
     }
+
+    debug!("Register player message sent and succeeded");
 
     match game_receiver.await {
         Ok(Outcome::NewPlayer(player_id)) => {
-            cookies.add(Cookie::new("player_id", value));
-            
+            debug!("Register player request succeeded");
+            Ok((cookies.add(Cookie::new("player_id", player_id.player_id.to_string())), Redirect::temporary("/")))
         },
+        Ok(_) => {
+            error!("Register player failed - unexpected return message type.");
+            let mut error = HashMap::new();
+            error.insert(String::from("error"), String::from("The GameRunner is spewing nonsense.  Someone forgot to pull the defrangulator."));
+            Err(Response::builder()
+                .extension(ModelView{ view: String::from("500.html"), model: error})
+                .body(axum::body::Empty::<Bytes>::new()).unwrap())
+        }
         Err(_) => {
+            error!("Register player failed - channel broke");
             let mut error = HashMap::new();
             error.insert(String::from("error"), String::from("The response channel to your registration request errored out.  The administrator will likely need to retart the system."));
-            return Response::builder()
+            Err(Response::builder()
                 .extension(ModelView{ view: String::from("500.html"), model: error })
-                .body(axum::body::Empty::<Bytes>::new()).unwrap();
+                .body(axum::body::Empty::<Bytes>::new()).unwrap())
         },
     }
 }

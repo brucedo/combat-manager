@@ -9,10 +9,12 @@ use axum::http::Request;
 use axum::middleware::Next;
 use axum::response::Response;
 use axum::{Router, middleware};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum_extra::extract::CookieJar;
+use axum_macros::debug_handler;
 use log::{debug, error};
 use serde::Serialize;
+use tokio::sync::broadcast::error;
 use tokio::sync::{mpsc::Sender, oneshot::channel};
 use tokio::sync::oneshot::Receiver as OneShotReceiver;
 use tower::ServiceBuilder;
@@ -20,14 +22,14 @@ use uuid::{Uuid, uuid};
 
 use crate::Configuration;
 use crate::http::modelview::{model_view_render, static_file_render};
-use crate::http::renders::{initialize_renders, index, static_resources, display_registration_form};
+use crate::http::renders::{initialize_renders, index, static_resources, display_registration_form, register_player};
 use crate::http::state::State;
 use crate::{gamerunner::dispatcher::{Message, Outcome, Roll}, http::{serde::{NewGame, InitiativeRoll}, metagame::Metagame},};
 
 use super::modelview::{StaticView, ModelView};
 use super::serde::{Character, AddedCharacterJson, NewState, BeginCombat};
 
-
+// #[debug_handler]
 pub async fn start_server(config: &Configuration, game_channel: Sender<Message>)
 {
     debug!("start_server() called");
@@ -44,6 +46,7 @@ pub async fn start_server(config: &Configuration, game_channel: Sender<Message>)
         )
         .route("/static/*resource", get(static_resources))
         .route("/register", get(display_registration_form))
+        .route("/register", post(register_player))
         .layer(
             ServiceBuilder::new()
                 .layer(middleware::from_fn_with_state(state.clone(), model_view_render::<Body>))
@@ -73,59 +76,74 @@ async fn validate_registration<B>(
 ) -> Response
 {
 
+    debug!("Beginning validate registration process");
+
     let cookie = if let Some(cookie) = cookie_jar.get("player_id"){cookie}
     else
     {
+        debug!("No cookie named player_id present in the request.");
         return Response::builder()
             .status(302)
             .header("Location", "/register")
             .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
     };
 
+    debug!("player_id cookie found.");
+
     let player_id = if let Ok(player_id) = Uuid::parse_str(cookie.value()) {player_id}
     else
     {
+        debug!("player_id contents do not form a UUID");
         return Response::builder()
             .status(302)
             .header("Location", "/register")
             .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
     };
+
+    debug!("player_id is a UUID.");
 
     let (reply_sender, reply_receiver) = tokio::sync::oneshot::channel();
     let msg = Message { game_id: None, player_id: Some(player_id), reply_channel: reply_sender, msg: crate::gamerunner::dispatcher::Request::IsRegistered };
 
     if let Err(_) = state.channel.clone().send(msg).await {
+        error!("channel closed out early.");
         let mut error_message = HashMap::new();
         error_message.insert(String::from("error"), String::from("The GameRunner messaging channel has broken.  The administrator will likely need to restart the system."));
         return Response::builder().extension(ModelView { view: String::from("500.html"), model: error_message })
             .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
     }
 
+    debug!("is_player message sent to channel.");
+
     match reply_receiver.await
     {
         Ok(Outcome::PlayerExists) =>
         {
+            debug!("Player exists, continuing next.");
             return next.run(request).await
         },
         Ok(Outcome::PlayerNotExists) => {
+            debug!("Player does not exist, redirecting to registration page.");
             Response::builder()
             .status(302)
             .header("Location", "/register")
             .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
         },
         Ok(_) => {
+            error!("GameRunner sent unexpected return type.");
             let mut error_message = HashMap::new();
             error_message.insert(String::from("error"), String::from("The GameRunner is returning unreasonable responses for the questions asked.  Likely it has achieved sentience.  I would run."));
             Response::builder().extension(ModelView { view: String::from("500.html"), model: error_message })
                 .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
         }
         _ => {
+            error!("Messaging channel to GameRunner broke.");
             let mut error_message = HashMap::new();
             error_message.insert(String::from("error"), String::from("The GameRunner messaging channel has broken.  The administrator will likely need to restart the system."));
             Response::builder().extension(ModelView { view: String::from("500.html"), model: error_message })
                 .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
         }
-        }
+    }
 }
 
 
