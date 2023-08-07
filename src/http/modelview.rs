@@ -13,6 +13,13 @@ pub struct ModelView
     pub model: HashMap<String, String>,
 }
 
+pub struct ModelView2
+// where T: Serialize + Send + Sync + 'static
+{
+    pub view: &'static str,
+    pub model: Box<dyn Serialize>
+}
+
 pub struct StaticView
 {
     pub view: String
@@ -68,11 +75,23 @@ pub async fn model_view_render<B>(
 
     debug!("model_view_render invoked post-response");
 
-    match response.extensions().get::<ModelView>()
+    match (response.extensions().get::<ModelView>(), response.extensions().get::<ModelView2>())
     {
-        None => {response},
-        Some(model_view) => {
+        (None, None) => {response},
+        (Some(model_view), _) => {
             if let Ok(html) = state.handlebars.render(&model_view.view, &model_view.model)
+            {
+                Response::builder().status(200)
+                .header("Content-Type", "text/html; charset=UTF-8")
+                .body(axum::body::boxed(axum::body::Full::from(html))).unwrap()
+            }
+            else
+            {
+                Response::builder().status(500).body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
+            }
+        },
+        (_, Some(model_view2)) => {
+            if let Ok(html) = state.handlebars.render(model_view2.view, &model_view2.model)
             {
                 Response::builder().status(200)
                 .header("Content-Type", "text/html; charset=UTF-8")

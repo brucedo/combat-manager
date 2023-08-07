@@ -23,7 +23,6 @@ pub struct GameSummary
 {
     pub game_name: String,
     pub url: String,
-    pub gm: Uuid
 }
 
 // #[derive(Serialize)]

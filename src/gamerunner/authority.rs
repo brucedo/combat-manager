@@ -20,19 +20,35 @@ pub fn authorize<'a, 'b>(player_id_opt: Option<GameId>, game_id_opt: Option<Play
             {
                 Role::RolePlayer(player_id, game_id)
             }
+            else if directory.is_registered(&player_id)
+            {
+                debug!("Player id {} is registered.", player_id);
+                Role::RoleObserver(player_id, game_id)
+            }
             else 
             {
-                Role::RoleObserver(player_id, game_id)
+                debug!("Player id {} is not registered.", player_id);
+                Role::RoleUnregistered
             };
 
             // Authority {player_id: Some(player_id), game_id: Some(game_id), resource_role, request}
             Authority {resource_role, request }
         }, 
         (None, Some(player_id)) => {
-            Authority {resource_role: Role::RoleRegistered(player_id), request}
+            if directory.is_registered(&player_id)
+            {
+                debug!("Player ID {} is registered.", player_id);
+                Authority {resource_role: Role::RoleRegistered(player_id), request}
+            }
+            else
+            {
+                debug!("Player ID {} is not registered.", player_id);
+                Authority {resource_role: Role::RoleUnregistered, request}
+            }
         }
         (_, None) =>
         {
+            debug!("No player ID included - player unregistered.");
             Authority {resource_role: Role::RoleUnregistered, request}
         }
     }

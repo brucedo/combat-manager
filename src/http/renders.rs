@@ -139,13 +139,41 @@ fn read_text_file(file_path: &PathBuf) -> Result<(String, String), Error>
     }
 }
 
-#[debug_handler]
-pub async fn index() -> Response<axum::body::Empty<Bytes>>
+// #[debug_handler]
+pub async fn index(state: State<Arc<crate::http::state::State<'_>>>) -> Response//<axum::body::Empty<Bytes>>
 {
     debug!("Request for index received.");
+
+    // let (game_sender, game_receiver) = channel::<Message>();
+    // let msg = Message { game_id: None, player_id: None, reply_channel: game_sender, msg: Request::Enumerate };
+    // match send_and_recv(None, None, Request::Enumerate, state.channel.clone()).await
+    // {
+        
+    //     Ok(Outcome::Summaries(summaries)) => {
+    //         let model_summaries = Vec::new();
+    //         for (game_uuid, game_name) in summaries.drain(..)
+    //         {
+    //             let mut url = String::from("/game/");
+    //             url.push_str(&game_uuid.to_string());
+    //             model_summaries.push(GameSummary { game_name, url });
+    //         }
+            
+    //         Response::builder()
+    //             .extension(ModelView{view: String::from("500.html"), model})
+    //     },
+    //     Ok(_) => {
+    //         let mut model = HashMap::new();
+    //         model.insert(String::from("error"), String::from("The GameRunner is returning unexpected outcomes.  Probably the developer did something very stupid.  You should tell him."));
+    //         Response::builder()
+    //             .extension(ModelView{view: String::from("500.html"), model})
+    //             .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
+    //     }
+    //     Err(response) => response,
+    // };
+
     Response::builder()
         .extension(StaticView{ view: String::from("index.html") })
-        .body(axum::body::Empty::<Bytes>::new()).unwrap()
+        .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
 }
 
 pub async fn static_resources(resource: Path<String>) -> Response<axum::body::Empty<Bytes>>
@@ -397,19 +425,29 @@ Result<(CookieJar, Redirect), Response<axum::body::Empty<Bytes>>>
 //     Redirect::to(uri!("/"))
 // }
 
-// async fn send_and_recv(game_id: Uuid, body: Request, sender: Sender<Message>) -> Result<Outcome, Error>
-// {
-//     let (their_sender, my_receiver) = channel::<Outcome>();
-//     let msg = Message { player_id: None, game_id:Some(game_id), reply_channel: their_sender, msg: body };
-//     if let Err(_err) = sender.send(msg).await
-//     {
-//         return Err(Error::InternalServerError(Template::render("500", context! {action_name: "create a character", error: "The game runner closed its channel."})));
-//     }
+async fn send_and_recv(player_id: Option<Uuid>, game_id: Option<Uuid>, body: Request, sender: Sender<Message>) -> Result<Outcome, Response>
+{
+    let (their_sender, my_receiver) = channel::<Outcome>();
+    let msg = Message { player_id, game_id,  reply_channel: their_sender, msg: body };
+    if let Err(_err) = sender.send(msg).await
+    {
+        let mut model = HashMap::new();
+        model.insert(String::from("error"), String::from("The GameRunner's messaging channel has terminated."));
+        return Err(Response::builder()
+            .extension(ModelView { view: String::from("500.html"), model: model})
+            .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap());
+    }
 
-//     match my_receiver.await 
-//     {
-//         Ok(outcome) => Ok(outcome),
-//         Err(_err) => 
-//             Err(Error::InternalServerError(Template::render("500", context! {action_name: "create a character", error: "The reply channel was closed."}))),
-//     }
-// }
+    match my_receiver.await 
+    {
+        Ok(outcome) => Ok(outcome),
+        Err(_err) => {
+            let mut model = HashMap::new();
+            model.insert(String::from("error"), String::from("The response channel provided to the runner has terminated."));
+            return Err(Response::builder()
+                .extension(ModelView { view: String::from("500.html"), model: model})
+                .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap())
+        },
+
+    }
+}

@@ -212,6 +212,10 @@ pub fn dispatch_message2(registry: &mut GameRegistry, authority: &Authority) -> 
             debug!("Request is to get any initiatives that have not been fully resolved.");
             (remaining_initiatives_are(registry, authority), None)
         }
+        Request::IsRegistered => {
+            debug!("Request is to determine if the player ID is registered with the runner.");
+            (is_player_id_registered(registry, authority), None)
+        }
         _ => (Outcome::Error(Error { message: String::from("Not Yet Implemented"), kind: ErrorKind::InvalidStateAction }), None)
     }
 }
@@ -931,4 +935,13 @@ fn remaining_initiatives_are(registry: &mut GameRegistry, authority: &Authority)
         }
     }
     
+}
+
+fn is_player_id_registered(registry: &GameRegistry, authority: &Authority) -> Outcome
+{
+    match authority.resource_role()
+    {
+        Role::RoleUnregistered => Outcome::PlayerNotExists,
+        _ => Outcome::PlayerExists
+    }
 }
