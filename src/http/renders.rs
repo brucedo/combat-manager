@@ -9,9 +9,9 @@ use uuid::Uuid;
 use handlebars::{Handlebars, template};
 use tokio::sync::{oneshot::channel, mpsc::Sender};
 
-use crate::{gamerunner::dispatcher::{Message, Request, Outcome}, http::{session::NewSessionOutcome, models::NewGame}, tracker::character::Character, Configuration};
+use crate::{gamerunner::dispatcher::{Message, Request, Outcome}, http::{session::NewSessionOutcome, models::NewGame, modelview::ModelView2}, tracker::character::Character, Configuration};
 
-use super::{models::{GameSummary, GMView, IndexModel, PlayerView, SimpleCharacterView, NewCharacter, Registration}, session::Session, metagame::Metagame, modelview::{StaticView, ModelView}, statics::Statics};
+use super::{models::{GameSummary, GMView, IndexModel, PlayerView, SimpleCharacterView, NewCharacter, Registration}, session::Session, metagame::Metagame, modelview::{StaticView, ModelView}, statics::Statics, server::PlayerId};
 
 
 pub fn initialize_renders(config: &Configuration) -> (Handlebars<'static>, Statics)
@@ -140,40 +140,41 @@ fn read_text_file(file_path: &PathBuf) -> Result<(String, String), Error>
 }
 
 // #[debug_handler]
-pub async fn index(state: State<Arc<crate::http::state::State<'_>>>) -> Response//<axum::body::Empty<Bytes>>
+pub async fn index(PlayerId(player_id): PlayerId, state: State<Arc<crate::http::state::State<'_>>>) -> Response//<axum::body::Empty<Bytes>>
 {
     debug!("Request for index received.");
 
-    // let (game_sender, game_receiver) = channel::<Message>();
-    // let msg = Message { game_id: None, player_id: None, reply_channel: game_sender, msg: Request::Enumerate };
-    // match send_and_recv(None, None, Request::Enumerate, state.channel.clone()).await
-    // {
+    match (
+        send_and_recv(Some(player_id), None, Request::Enumerate, state.channel.clone()).await, 
+        send_and_recv(Some(player_id), None, Request::PlayerName, state.channel.clone()).await
+    )
+    {
         
-    //     Ok(Outcome::Summaries(summaries)) => {
-    //         let model_summaries = Vec::new();
-    //         for (game_uuid, game_name) in summaries.drain(..)
-    //         {
-    //             let mut url = String::from("/game/");
-    //             url.push_str(&game_uuid.to_string());
-    //             model_summaries.push(GameSummary { game_name, url });
-    //         }
-            
-    //         Response::builder()
-    //             .extension(ModelView{view: String::from("500.html"), model})
-    //     },
-    //     Ok(_) => {
-    //         let mut model = HashMap::new();
-    //         model.insert(String::from("error"), String::from("The GameRunner is returning unexpected outcomes.  Probably the developer did something very stupid.  You should tell him."));
-    //         Response::builder()
-    //             .extension(ModelView{view: String::from("500.html"), model})
-    //             .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
-    //     }
-    //     Err(response) => response,
-    // };
+        (Ok(Outcome::Summaries(mut summaries)), Ok(Outcome::PlayerName(player_name))) => {
+            debug!("Summary generated and player name retrieved. Player name: {}", player_name);
+            let mut model_summaries = Vec::new();
+            for (game_uuid, game_name) in summaries.drain(..)
+            {
+                let mut url = String::from("/game/");
+                url.push_str(&game_uuid.to_string());
+                model_summaries.push(GameSummary { game_name, url });
+            }
 
-    Response::builder()
-        .extension(StaticView{ view: String::from("index.html") })
-        .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
+            debug!("Generating response and sending.");
+
+            Response::builder()
+                .extension(ModelView2{view: "index", model: Box::from(IndexModel{ player_handle: player_name, summaries: model_summaries })})
+                .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
+        },
+        (Ok(_), Ok(_)) => {
+            error!("Either summary could not be generated or the player was not found, either way something went wrong here.");
+            Response::builder()
+                .extension(ModelView2{view: "500.html", model: Box::from(crate::http::models::Error{ error: "The GameRunner sent unexpected Outcomes." })})
+                .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
+        },
+        (Err(response), _) => response,
+        (_, Err(response)) => response
+    }
 }
 
 pub async fn static_resources(resource: Path<String>) -> Response<axum::body::Empty<Bytes>>
@@ -192,14 +193,14 @@ pub async fn display_registration_form() -> Response<axum::body::Empty<Bytes>>
 }
 
 // #[debug_handler]
-pub async fn register_player(state: State<Arc<crate::http::state::State<'_>>>, cookies: CookieJar, _form_data: Form<Registration>) -> 
+pub async fn register_player(state: State<Arc<crate::http::state::State<'_>>>, cookies: CookieJar, form_data: Form<Registration>) -> 
 Result<(CookieJar, Redirect), Response<axum::body::Empty<Bytes>>>
 {
     // let player_name = form_data.0.player_handle;
     debug!("Processing POST to register request.");
 
     let (game_sender, game_receiver) = channel();
-    let msg = Message { game_id: None, player_id: None, reply_channel: game_sender, msg: Request::NewPlayer };
+    let msg = Message { game_id: None, player_id: None, reply_channel: game_sender, msg: Request::NewPlayer(form_data.player_handle.clone()) };
 
     if let Err(_) = state.channel.clone().send(msg).await
     {
@@ -216,7 +217,7 @@ Result<(CookieJar, Redirect), Response<axum::body::Empty<Bytes>>>
     match game_receiver.await {
         Ok(Outcome::NewPlayer(player_id)) => {
             debug!("Register player request succeeded");
-            Ok((cookies.add(Cookie::new("player_id", player_id.player_id.to_string())), Redirect::temporary("/")))
+            Ok((cookies.add(Cookie::new("player_id", player_id.player_id.to_string())), Redirect::to("/")))
         },
         Ok(_) => {
             error!("Register player failed - unexpected return message type.");

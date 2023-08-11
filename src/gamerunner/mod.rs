@@ -134,9 +134,10 @@ mod tests
     {
         debug!("Starting add_new_game");
         let gm: PlayerId;
+        let gm_name = String::from("King Ghidorah");
 
         let (mut game_sender, mut game_receiver) = channel();
-        let msg = Message { player_id: None, game_id: None, reply_channel: game_sender, msg: Request::NewPlayer};
+        let msg = Message { player_id: None, game_id: None, reply_channel: game_sender, msg: Request::NewPlayer(gm_name)};
 
         debug!("Message to register new player done and sending.");
 
@@ -174,8 +175,9 @@ mod tests
     pub async fn player_join_game(game_input_channel: &Sender<Message>, game_id: Uuid) -> NewPlayer
     {
         let (game_sender, game_receiver) = channel();
+        let player_name = String::from("Lizard");
         
-        let msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::NewPlayer};
+        let msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::NewPlayer(player_name)};
 
         if let Err(_) = game_input_channel.send(msg).await 
         {
@@ -203,7 +205,9 @@ mod tests
         let (game_sender, game_receiver) = channel();
         let (_, game_id) = add_new_game(&game_input_channel).await;
 
-        let msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::NewPlayer};
+        let player_name = String::from("Lizard");
+
+        let msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::NewPlayer(player_name)};
 
         if let Err(_) = game_input_channel.send(msg).await 
         {
@@ -309,9 +313,10 @@ mod tests
         let mut game_receiver: Receiver<Outcome>;
 
         (game_sender, game_receiver) = channel::<Outcome>();
+        let player_name = String::from("Lizard");
         
         debug!("Adding a player.");
-        let mut msg = Message {player_id: None, game_id: None, reply_channel: game_sender, msg: Request::NewPlayer};
+        let mut msg = Message {player_id: None, game_id: None, reply_channel: game_sender, msg: Request::NewPlayer(player_name)};
         assert!(game_input_channel.send(msg).await.is_ok());
 
         let player_id = match game_receiver.await {
@@ -384,8 +389,9 @@ mod tests
     {
         let game_input_channel = init();
         let (mut game_sender, mut game_receiver) = channel();
+        let player_name = String::from("Lizard");
 
-        let mut msg = Message {player_id: None, game_id: None, reply_channel: game_sender, msg: Request::NewPlayer};
+        let mut msg = Message {player_id: None, game_id: None, reply_channel: game_sender, msg: Request::NewPlayer(player_name)};
         assert!(game_input_channel.send(msg).await.is_ok());
         let player_id = match game_receiver.await {
             Ok(Outcome::NewPlayer(player_obj)) => player_obj.player_id,
@@ -440,7 +446,8 @@ mod tests
         debug!("Creating oneshots");
         // when I send a NewGame message with one half of a oneshot channel...
         let (mut game_sender, mut game_receiver) = channel();
-        let mut msg = Message { player_id: None, game_id: None, reply_channel: game_sender, msg: Request::NewPlayer};
+        let player_name = String::from("Lizard");
+        let mut msg = Message { player_id: None, game_id: None, reply_channel: game_sender, msg: Request::NewPlayer(player_name)};
         assert!(game_input_channel.send(msg).await.is_ok());
 
         let gm_id = match game_receiver.await {
@@ -505,8 +512,9 @@ mod tests
         let (mut game_sender, mut game_receiver) = channel::<Outcome>();
 
         let (gm_id, game_id) = add_new_game(&game_input_channel).await;
+        let player_name = String::from("Lizard");
 
-        let mut msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::NewPlayer};
+        let mut msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::NewPlayer(player_name)};
         let mut send_state = game_input_channel.send(msg).await;
         assert!(send_state.is_ok());
         let (melf_id, mut melf_notifications) = match game_receiver.await.unwrap()
@@ -516,7 +524,8 @@ mod tests
         };
 
         (game_sender, game_receiver) = channel::<Outcome>();
-        msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::NewPlayer};
+        let player_name = String::from("Wizard");
+        msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::NewPlayer(player_name)};
         send_state = game_input_channel.send(msg).await;
         assert!(send_state.is_ok());
         let (mork_id, mut mork_notifications) = match game_receiver.await.unwrap()
@@ -647,8 +656,9 @@ mod tests
         let (mut game_sender, mut game_receiver) = channel::<Outcome>();
 
         let (_, game_id) = add_new_game(&game_input_channel).await;
+        let player_name = String::from("Lizard");
 
-        let mut msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::NewPlayer};
+        let mut msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::NewPlayer(player_name)};
         let send_state = game_input_channel.send(msg).await;
         assert!(send_state.is_ok());
 
@@ -688,8 +698,9 @@ mod tests
         let (mut game_sender, mut game_receiver) = channel::<Outcome>();
 
         let (_, game_id) = add_new_game(&game_input_channel).await;
+        let player_name = String::from("Lizard");
 
-        let mut msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::NewPlayer};
+        let mut msg = Message {player_id: None, game_id: Some(game_id), reply_channel: game_sender, msg: Request::NewPlayer(player_name)};
         let send_state = game_input_channel.send(msg).await;
         assert!(send_state.is_ok());
 
@@ -1119,9 +1130,11 @@ mod tests
     {
         let game_input_channel = init();
         let game_id: Uuid;
-        let (mut game_sender, mut game_receiver) = channel();
 
-        let mut msg = Message { player_id: None, game_id: None, reply_channel: game_sender, msg: Request::NewPlayer};
+        let (mut game_sender, mut game_receiver) = channel();
+        let player_name = String::from("Lizard");
+
+        let mut msg = Message { player_id: None, game_id: None, reply_channel: game_sender, msg: Request::NewPlayer(player_name)};
         assert!(game_input_channel.send(msg).await.is_ok());
 
         let gm_id = match game_receiver.await {
@@ -1203,7 +1216,8 @@ mod tests
         let (mut game_sender, mut game_receiver) = channel::<Outcome>();
         let mut _game_receiver: Receiver<Outcome>;
 
-        let mut msg = Message {player_id: None, game_id: None, reply_channel: game_sender, msg: Request::NewPlayer};
+        let player_name = String::from("Lizard");
+        let mut msg = Message {player_id: None, game_id: None, reply_channel: game_sender, msg: Request::NewPlayer(player_name)};
         assert!(game_input_channel.send(msg).await.is_ok());
 
         let player_id = match game_receiver.await

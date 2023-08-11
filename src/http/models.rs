@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::tracker::character::{Character, Metatypes};
@@ -11,14 +11,20 @@ pub struct Registration
     pub player_handle: String
 }
 
-// #[derive(Serialize, Deserialize)]
-pub struct IndexModel<'r>
+#[derive(Serialize)]
+pub struct Error
 {
-    pub player_handle: &'r str,
+    pub error: &'static str
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct IndexModel
+{
+    pub player_handle: String,
     pub summaries: Vec<GameSummary>
 }
 
-// #[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct GameSummary
 {
     pub game_name: String,

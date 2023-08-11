@@ -1,10 +1,9 @@
 use std::{sync::Arc, collections::HashMap};
 
-use axum::{extract::State, http::{request, Request}, middleware::Next, response::{Response, Html}, body::Bytes};
+use axum::{extract::State, http::Request, middleware::Next, response::Response, body::Bytes};
 use axum_macros::debug_handler;
-use log::debug;
-use serde::Serialize;
-
+use log::{debug, error};
+use erased_serde::Serialize;
 
 
 pub struct ModelView
@@ -17,7 +16,7 @@ pub struct ModelView2
 // where T: Serialize + Send + Sync + 'static
 {
     pub view: &'static str,
-    pub model: Box<dyn Serialize>
+    pub model: Box<dyn Serialize + Send + Sync + 'static>
 }
 
 pub struct StaticView
@@ -79,6 +78,7 @@ pub async fn model_view_render<B>(
     {
         (None, None) => {response},
         (Some(model_view), _) => {
+            debug!("There is a ModelView extension attached to this request.  Attempting to process and render.");
             if let Ok(html) = state.handlebars.render(&model_view.view, &model_view.model)
             {
                 Response::builder().status(200)
@@ -91,15 +91,19 @@ pub async fn model_view_render<B>(
             }
         },
         (_, Some(model_view2)) => {
-            if let Ok(html) = state.handlebars.render(model_view2.view, &model_view2.model)
+            debug!("There is a ModelView2 extension attached to this request.  Attempting to process and render.");
+            match state.handlebars.render(model_view2.view, &model_view2.model)
             {
-                Response::builder().status(200)
-                .header("Content-Type", "text/html; charset=UTF-8")
-                .body(axum::body::boxed(axum::body::Full::from(html))).unwrap()
-            }
-            else
-            {
-                Response::builder().status(500).body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
+                Ok(html) => {
+                    debug!("The render processed perfectly, generating response with status and body now.");
+                    Response::builder().status(200)
+                    .header("Content-Type", "text/html; charset=UTF-8")
+                    .body(axum::body::boxed(axum::body::Full::from(html))).unwrap()
+                },
+                Err(e) => {
+                    error!("The render failed.  Reason: {}", e.desc);
+                    Response::builder().status(500).body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
+                }
             }
         }
     }

@@ -5,10 +5,12 @@ use std::process::exit;
 use std::sync::Arc;
 
 use axum::body::{Body, Bytes};
+use axum::extract::FromRequestParts;
 use axum::http::Request;
+use axum::http::request::Parts;
 use axum::middleware::Next;
 use axum::response::Response;
-use axum::{Router, middleware};
+use axum::{Router, middleware, async_trait};
 use axum::routing::{get, post};
 use axum_extra::extract::CookieJar;
 use axum_macros::debug_handler;
@@ -26,7 +28,8 @@ use crate::http::renders::{initialize_renders, index, static_resources, display_
 use crate::http::state::State;
 use crate::{gamerunner::dispatcher::{Message, Outcome, Roll}, http::{serde::{NewGame, InitiativeRoll}, metagame::Metagame},};
 
-use super::modelview::{StaticView, ModelView};
+use super::models::Error;
+use super::modelview::{StaticView, ModelView, ModelView2};
 use super::serde::{Character, AddedCharacterJson, NewState, BeginCombat};
 
 // #[debug_handler]
@@ -66,6 +69,37 @@ pub async fn start_server(config: &Configuration, game_channel: Sender<Message>)
         .serve(app.into_make_service())
         .await
         .unwrap()
+}
+
+pub struct PlayerId(pub Uuid);
+
+#[async_trait]
+impl<S> FromRequestParts<S> for PlayerId
+where S: Send + Sync,
+{
+    type Rejection = Response;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection>
+    {
+        let jar = CookieJar::from_request_parts(parts, state).await.unwrap();
+        if let Some(id_cookie) = jar.get("player_id") {
+            if let Ok(player_id) = Uuid::parse_str(id_cookie.value())
+            {
+                Ok(PlayerId(player_id))
+            }
+            else
+            {
+                Err(Response::builder().extension(ModelView2 {view: "400.html", model: Box::from(Error{error: "The player ID cannot be converted into a UUID."})})
+                    .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
+                )
+            }
+        }
+        else {
+            Err(Response::builder().extension(ModelView2 {view: "400.html", model: Box::from(Error{error: "The player ID is missing from the request."})})
+                    .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
+                )
+        }
+    }
 }
 
 async fn validate_registration<B>(

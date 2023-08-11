@@ -80,7 +80,7 @@ impl <'a> GameRegistry
         Some(&entry.game)
     }
 
-    pub fn register_player(&mut self, player_id: PlayerId, player_comm_channel: Sender<Arc<WhatChanged>>) -> Result<(), ()>
+    pub fn register_player(&mut self, player_name: String, player_id: PlayerId, player_comm_channel: Sender<Arc<WhatChanged>>) -> Result<(), ()>
     {
         match self.players.entry(player_id)
         {
@@ -89,7 +89,7 @@ impl <'a> GameRegistry
             {
                 vacant.insert(PlayerDirectoryEntry 
                 {
-                    player_name: String::from(""),  
+                    player_name,
                     player_id, player_games: HashSet::new(), 
                     player_characters: HashMap::new(), 
                     player_sender: player_comm_channel 
@@ -363,6 +363,12 @@ impl <'a> GameRegistry
             }
         }
     }
+
+    pub fn get_player_name(&self, player_id: &PlayerId) -> Option<String>
+    {
+        let dir_entry = self.players.get(player_id)?;
+        Some(dir_entry.player_name.clone())
+    }
 }
 
 #[cfg(test)]
@@ -389,11 +395,12 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
+        let gm_name = String::from("King Ghidorah");
 
         let game: Game = Game::new();
         let id = Uuid::new_v4();
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm ,id, game).is_ok());
 
         assert!(registry.get_mut_game(&id).is_some());
@@ -415,11 +422,12 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
+        let gm_name = String::from("King Ghidorah");
 
         let game = Game::new();
         let id = Uuid::new_v4();
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, id, game).is_ok());
 
         assert!(registry.get_game(&id).is_some() );
@@ -431,11 +439,12 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
+        let gm_name = String::from("King Ghidorah");
 
         let game = Game::new();
         let id = Uuid::new_v4();
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, id, game).is_ok());
 
         assert!(registry.get_game(&Uuid::new_v4()).is_none());
@@ -447,9 +456,10 @@ pub mod tests
         let mut registry = GameRegistry::new();
 
         let player_id = Uuid::new_v4();
+        let player_name = String::from("Lizard");
         let (sender, _) = channel(32);
 
-        assert!(registry.register_player(player_id, sender).is_ok())
+        assert!(registry.register_player(player_name, player_id, sender).is_ok())
     }
 
     #[test]
@@ -458,10 +468,28 @@ pub mod tests
         let mut registry = GameRegistry::new();
 
         let player_id = Uuid::new_v4();
+        let player_name = String::from("Lizard");
         let (sender, _) = channel(32);
         
-        assert!(registry.register_player(player_id, sender.clone()).is_ok());
-        assert!(registry.register_player(player_id, sender).is_err());
+        assert!(registry.register_player(player_name.clone(), player_id, sender.clone()).is_ok());
+        assert!(registry.register_player(player_name, player_id, sender).is_err());
+    }
+
+    #[test]
+    pub fn a_duplicate_name_may_be_used_on_multiple_players()
+    {
+        let mut registry = GameRegistry::new();
+
+        let player_1_id = PlayerId::new_v4();
+        let player_1_name = String::from("Seamus");
+        let (player_1_sender, _) = channel(32);
+
+        let player_2_id = PlayerId::new_v4();
+        let player_2_name = String::from("Seamus");
+        let (player_2_sender, _) = channel(32);
+
+        assert!(registry.register_player(player_1_name, player_1_id, player_1_sender).is_ok());
+        assert!(registry.register_player(player_2_name, player_2_id, player_2_sender).is_ok());
     }
 
     #[test]
@@ -470,15 +498,17 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
+        let gm_name = String::from("King Ghidorah");
 
         let player_id = Uuid::new_v4();
+        let player_name = String::from("Lizard");
         let (sender, _) = channel(32);
         let game_id = Uuid::new_v4();
         let game = Game::new();
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_id, game).is_ok());
-        assert!(registry.register_player(player_id, sender).is_ok());
+        assert!(registry.register_player(player_name, player_id, sender).is_ok());
 
         assert!(registry.join_game(player_id, game_id).is_ok());
     }
@@ -489,12 +519,13 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
+        let gm_name = String::from("King Ghidorah");
 
         let player_id = Uuid::new_v4();
         let game_id = Uuid::new_v4();
         let game = Game::new();
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_id, game).is_ok());
 
         assert!(registry.join_game(player_id, game_id).is_err());
@@ -506,10 +537,11 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
+        let gm_name = String::from("King Ghidorah");
 
         let game_id = Uuid::new_v4();
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_id, Game::new()).is_ok());
 
         assert!(registry.gm_id(&game_id).is_some());
@@ -524,10 +556,11 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, mut gm_receiver) = channel(32);
+        let gm_name = String::from("King Ghidorah");
 
         let game_id = Uuid::new_v4();
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_id, Game::new()).is_ok());
 
         assert!(registry.gm_sender(&game_id).is_some());
@@ -551,15 +584,17 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
+        let gm_name = String::from("King Ghidorah");
 
         let player_id = Uuid::new_v4();
+        let player_name = String::from("Lizard");
         let (sender, mut receiver) = channel(32);
         let game_id = Uuid::new_v4();
         let game = Game::new();
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_id, game).is_ok());
-        assert!(registry.register_player(player_id, sender).is_ok());
+        assert!(registry.register_player(player_name, player_id, sender).is_ok());
 
         let player_comms = registry.get_player_sender(&player_id).unwrap();
         
@@ -576,17 +611,19 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
+        let gm_name = String::from("King Ghidorah");
 
         let game_1 = Uuid::new_v4();
 
         let player_1 = Uuid::new_v4();
+        let player_name = String::from("Lizard");
         let (player_sender, _) = channel(32);
         let mork = Character::new_pc(crate::tracker::character::Metatypes::Orc, String::from("Orcifer"));
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
         
-        assert!(registry.register_player(player_1, player_sender).is_ok());
+        assert!(registry.register_player(player_name, player_1, player_sender).is_ok());
         assert!(registry.join_game(player_1, game_1).is_ok());
     
         let char_id: Option<CharacterId> = registry.add_character(&player_1, &game_1, mork);
@@ -603,17 +640,19 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
+        let gm_name = String::from("King Ghidorah");
 
         let game_1 = Uuid::new_v4();
         let game_2 = Uuid::new_v4();
 
         let player_1 = Uuid::new_v4();
+        let player_name = String::from("Lizard");
         let (player_sender, _) = channel(32);
         let dorf = Character::new_pc(crate::tracker::character::Metatypes::Dwarf, String::from("Dorf"));
         let mork = Character::new_pc(crate::tracker::character::Metatypes::Orc, String::from("Mork"));
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
-        assert!(registry.register_player(player_1, player_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
+        assert!(registry.register_player(player_name, player_1, player_sender).is_ok());
 
         assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
         assert!(registry.new_game(gm, game_2, Game::new()).is_ok());
@@ -642,6 +681,7 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
+        let gm_name = String::from("King Ghidorah");
 
         let game_1 = Uuid::new_v4();
         let game_2 = Uuid::new_v4();
@@ -649,13 +689,13 @@ pub mod tests
 
         let (sender, _) = channel(32);
         let player_1 = Uuid::new_v4();
+        let player_name = String::from("Lizard");
 
-
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
         assert!(registry.new_game(gm, game_2, Game::new()).is_ok());
         assert!(registry.new_game(gm, game_3, Game::new()).is_ok());
-        assert!(registry.register_player(player_1, sender).is_ok());
+        assert!(registry.register_player(player_name, player_1, sender).is_ok());
 
         assert!(registry.join_game(player_1, game_1).is_ok());
         assert!(registry.join_game(player_1, game_2).is_ok());
@@ -677,13 +717,13 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
-
+        let gm_name = String::from("King Ghidorah");
 
         let game_1 = Uuid::new_v4();
         let game_2 = Uuid::new_v4();
         let game_3 = Uuid::new_v4();
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
         assert!(registry.new_game(gm, game_2, Game::new()).is_ok());
         assert!(registry.new_game(gm, game_3, Game::new()).is_ok());
@@ -714,12 +754,14 @@ pub mod tests
         init();
         let mut registry = GameRegistry::new();
         let player_1 = Uuid::new_v4();
+        let player_1_name = String::from("Lizard");
         let (sender_1, _) = channel(32);
         let player_2 = Uuid::new_v4();
+        let player_2_name = String::from("Wizard");
         let (sender_2, _) = channel(32);
 
-        assert!(registry.register_player(player_1, sender_1).is_ok());
-        assert!(registry.register_player(player_2, sender_2).is_ok());
+        assert!(registry.register_player(player_1_name, player_1, sender_1).is_ok());
+        assert!(registry.register_player(player_2_name, player_2, sender_2).is_ok());
 
         let registered_players = registry.enumerate_players();
 
@@ -746,15 +788,17 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
+        let gm_name = String::from("King Ghidorah");
 
         let game_1 = Uuid::new_v4();
 
         let (sender, _) = channel(32);
         let player_1 = Uuid::new_v4();
+        let player_name = String::from("Lizard");
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
-        assert!(registry.register_player(player_1, sender).is_ok());
+        assert!(registry.register_player(player_name, player_1, sender).is_ok());
 
         assert!(registry.games_by_player(Uuid::new_v4()).is_none());
 
@@ -768,13 +812,15 @@ pub mod tests
         let game_1 = Uuid::new_v4();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
+        let gm_name = String::from("King Ghidorah");
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
 
         let player_1 = Uuid::new_v4();
+        let player_name = String::from("Lizard");
         let (sender, _) = channel(32);
-        assert!(registry.register_player(player_1, sender).is_ok());
+        assert!(registry.register_player(player_name, player_1, sender).is_ok());
 
         let game = registry.games_by_player(player_1).unwrap();
 
@@ -787,21 +833,25 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
+        let gm_name = String::from("King Ghidorah");
 
         let game_1 = Uuid::new_v4();
 
         let player_1 = Uuid::new_v4();
+        let player_1_name = String::from("Lizard");
         let (sender_1, _) = channel(32);
         let player_2 = Uuid::new_v4();
+        let player_2_name = String::from("Wizard");
         let (sender_2, _) = channel(32);
         let player_3 = Uuid::new_v4();
+        let player_3_name = String::from("Gizzard");
         let (sender_3, _) = channel(32);
 
-        assert!(registry.register_player(player_1, sender_1).is_ok());
-        assert!(registry.register_player(player_2, sender_2).is_ok());
-        assert!(registry.register_player(player_3, sender_3).is_ok());
+        assert!(registry.register_player(player_1_name, player_1, sender_1).is_ok());
+        assert!(registry.register_player(player_2_name, player_2, sender_2).is_ok());
+        assert!(registry.register_player(player_3_name, player_3, sender_3).is_ok());
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
 
         assert!(registry.join_game(player_1, game_1).is_ok());
@@ -825,15 +875,16 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
-
+        let gm_name = String::from("King Ghidorah");
 
         let game_1 = Uuid::new_v4();
         let player_1 = Uuid::new_v4();
+        let player_name = String::from("Lizard");
         let (sender_1, _) = channel(32);
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
-        assert!(registry.register_player(player_1, sender_1).is_ok());
+        assert!(registry.register_player(player_name, player_1, sender_1).is_ok());
         
         let players = registry.players_by_game(&game_1);
         assert!(players.is_some());
@@ -849,16 +900,17 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
-
+        let gm_name = String::from("King Ghidorah");
         
         let game_1 = Uuid::new_v4();
 
         let player_1 = Uuid::new_v4();
+        let player_name = String::from("Lizard");
         let (sender, _) = channel(32);
     
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
-        assert!(registry.register_player(player_1, sender).is_ok());
+        assert!(registry.register_player(player_name, player_1, sender).is_ok());
 
         assert!(registry.join_game(player_1, game_1).is_ok());
 
@@ -873,18 +925,22 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
+        let gm_name = String::from("King Ghidorah");
 
         let player_1 = Uuid::new_v4();
+        let player_1_name = String::from("Lizard");
         let player_2 = Uuid::new_v4();
+        let player_2_name = String::from("Wizard");
         let (mut sender, _) = channel(32);
         let game_id = Uuid::new_v4();
         let game = Game::new();
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_id, game).is_ok());
-        assert!(registry.register_player(player_1, sender).is_ok());
+
+        assert!(registry.register_player(player_1_name, player_1, sender).is_ok());
         (sender, _) = channel(32);
-        assert!(registry.register_player(player_2, sender).is_ok());
+        assert!(registry.register_player(player_2_name, player_2, sender).is_ok());
 
         assert!(registry.join_game(player_1, game_id).is_ok());
         assert!(registry.join_game(player_2, game_id).is_ok());
@@ -902,12 +958,13 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
+        let gm_name = String::from("King Ghidorah");
 
         let player_1 = Uuid::new_v4();
         let game_id = Uuid::new_v4();
         let game = Game::new();
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_id, game).is_ok());
 
         assert!(registry.leave_game(player_1, game_id).is_err());
@@ -921,21 +978,25 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
+        let gm_name = String::from("King Ghidorah");
 
         let player_1 = Uuid::new_v4();
+        let player_1_name = String::from("Lizard");
         let (sender_1, _) = channel(32);
         let player_2 = Uuid::new_v4();
+        let player_2_name = String::from("Wizard");
         let (sender_2, _) = channel(32);
         let player_3 = Uuid::new_v4();
+        let player_3_name = String::from("Gizard");
         let (sender_3, _) = channel(32);
         
         let game_id = Uuid::new_v4();
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_id, Game::new()).is_ok());
-        assert!(registry.register_player(player_1, sender_1).is_ok());
-        assert!(registry.register_player(player_2, sender_2).is_ok());
-        assert!(registry.register_player(player_3, sender_3).is_ok());
+        assert!(registry.register_player(player_1_name, player_1, sender_1).is_ok());
+        assert!(registry.register_player(player_2_name, player_2, sender_2).is_ok());
+        assert!(registry.register_player(player_3_name, player_3, sender_3).is_ok());
 
         assert!(registry.join_game(player_1, game_id).is_ok());
         assert!(registry.join_game(player_2, game_id).is_ok());
@@ -968,21 +1029,23 @@ pub mod tests
         let  mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
-
+        let gm_name = String::from("King Ghidorah");
 
         let player_1 = Uuid::new_v4();
+        let player_1_name = String::from("Lizard");
         let (sender_1, _) = channel(32);
         let player_2 = Uuid::new_v4();
+        let player_2_name = String::from("Wizard");
         let (sender_2, _) = channel(32);
 
         let game_1 = Uuid::new_v4();
         let game_2 = Uuid::new_v4();
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
         assert!(registry.new_game(gm, game_2, Game::new()).is_ok());
-        assert!(registry.register_player(player_1, sender_1).is_ok());
-        assert!(registry.register_player(player_2, sender_2).is_ok());
+        assert!(registry.register_player(player_1_name, player_1, sender_1).is_ok());
+        assert!(registry.register_player(player_2_name, player_2, sender_2).is_ok());
 
         assert!(registry.join_game(player_1, game_1).is_ok());
         assert!(registry.join_game(player_2, game_1).is_ok());
@@ -1007,21 +1070,23 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
-
+        let gm_name = String::from("King Ghidorah");
 
         let player_1 = Uuid::new_v4();
+        let player_1_name = String::from("Lizard");
         let (sender_1, _) = channel(32);
         let player_2 = Uuid::new_v4();
+        let player_2_name = String::from("Wizard");
         let (sender_2, _) = channel(32);
 
         let game_1 = Uuid::new_v4();
         let game_2 = Uuid::new_v4();
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
         assert!(registry.new_game(gm, game_2, Game::new()).is_ok());
-        assert!(registry.register_player(player_1, sender_1).is_ok());
-        assert!(registry.register_player(player_2, sender_2).is_ok());
+        assert!(registry.register_player(player_1_name, player_1, sender_1).is_ok());
+        assert!(registry.register_player(player_2_name, player_2, sender_2).is_ok());
 
         let result = registry.unregister_player(Uuid::new_v4());
 
@@ -1036,15 +1101,16 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
-
+        let gm_name = String::from("King Ghidorah");
 
         let player_1 = Uuid::new_v4();
+        let player_name = String::from("Lizard");
         let (sender_1, _) = channel(32);
 
         let game_1 = Uuid::new_v4();
 
-        assert!((registry.register_player(player_1, sender_1).is_ok()));
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!((registry.register_player(player_name, player_1, sender_1).is_ok()));
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
 
         assert!(registry.join_game(player_1, game_1).is_ok());
@@ -1070,18 +1136,21 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
+        let gm_name = String::from("King Ghidorah");
 
         let player_1 = Uuid::new_v4();
+        let player_1_name = String::from("Lizard");
         let (sender_1, _) = channel(32);
         let player_2 = Uuid::new_v4();
+        let player_2_name = String::from("Wizard");
         let (sender_2, _) = channel(32);
 
         let game_1 = Uuid::new_v4();
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
-        assert!(registry.register_player(player_1, sender_1).is_ok());
-        assert!(registry.register_player(player_2, sender_2).is_ok());
+        assert!(registry.register_player(player_1_name, player_1, sender_1).is_ok());
+        assert!(registry.register_player(player_2_name, player_2, sender_2).is_ok());
 
         assert!(registry.join_game(player_1, game_1).is_ok());
 
@@ -1097,15 +1166,17 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
+        let gm_name = String::from("King Ghidorah");
 
         let player_1 = Uuid::new_v4();
+        let player_1_name = String::from("Lizard");
         let (sender_1, _) = channel(32);
 
         let game_1 = Uuid::new_v4();
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
-        assert!(registry.register_player(player_1, sender_1).is_ok());
+        assert!(registry.register_player(player_1_name, player_1, sender_1).is_ok());
 
         assert!(!registry.game_has_player(&Uuid::new_v4(), &player_1))
     }
@@ -1118,15 +1189,17 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
+        let gm_name = String::from("King Ghidorah");
 
         let player_1 = Uuid::new_v4();
+        let player_name = String::from("Lizard");
         let (sender_1, _) = channel(32);
 
         let game_1 = Uuid::new_v4();
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
-        assert!(registry.register_player(player_1, sender_1).is_ok());
+        assert!(registry.register_player(player_name, player_1, sender_1).is_ok());
 
         assert!(!registry.game_has_player(&game_1, &Uuid::new_v4()));
     }
@@ -1139,21 +1212,24 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
+        let gm_name = String::from("King Ghidorah");
 
         let player_1 = Uuid::new_v4();
+        let player_1_name = String::from("Lizard");
         let player_2 = Uuid::new_v4();
+        let player_2_name = String::from("Wizard");
         let (sender_1, _) = channel(32);
         let (sender_2, _) = channel(32);
 
         let game_1 = Uuid::new_v4();
         let game_2 = Uuid::new_v4();
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
         assert!(registry.new_game(gm, game_2, Game::new()).is_ok());
 
-        assert!(registry.register_player(player_1, sender_1).is_ok());
-        assert!(registry.register_player(player_2, sender_2).is_ok());
+        assert!(registry.register_player(player_1_name, player_1, sender_1).is_ok());
+        assert!(registry.register_player(player_2_name, player_2, sender_2).is_ok());
 
         assert!(registry.join_game(player_1, game_1).is_ok());
         assert!(registry.join_game(player_2, game_2).is_ok());
@@ -1169,17 +1245,18 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
-
+        let gm_name = String::from("King Ghidorah");
 
         let player_1 = Uuid::new_v4();
+        let player_name = String::from("Lizard");
         let (sender_1, _) = channel(32);
 
         let game_1 = Uuid::new_v4();
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_1, Game::new()).is_ok()); 
 
-        assert!(registry.register_player(player_1, sender_1).is_ok());
+        assert!(registry.register_player(player_name, player_1, sender_1).is_ok());
 
         assert!(registry.join_game(player_1, game_1).is_ok());
 
@@ -1194,15 +1271,17 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
+        let gm_name = String::from("King Ghidorah");
 
         let player_1 = Uuid::new_v4();
+        let player_name = String::from("Lizard");
         let (sender_1, _) = channel(32);
 
         let game_1 = Uuid::new_v4();
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
-        assert!(registry.register_player(player_1, sender_1).is_ok());
+        assert!(registry.register_player(player_name, player_1, sender_1).is_ok());
 
         assert!(!registry.player_in_game(Uuid::new_v4(), Uuid::new_v4()));
     }
@@ -1215,11 +1294,11 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
-
+        let gm_name = String::from("King Ghidorah");
         
         let game_1 = Uuid::new_v4();
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
         
         assert!(registry.is_game(&game_1));
@@ -1233,11 +1312,11 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
-
+        let gm_name = String::from("King Ghidorah");
 
         let game_1 = Uuid::new_v4();
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
 
         assert!(!registry.is_game(&Uuid::new_v4()));
@@ -1251,10 +1330,11 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
+        let gm_name = String::from("King Ghidorah");
 
         let game_1 = Uuid::new_v4();
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
     }
 
@@ -1266,16 +1346,18 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
+        let gm_name = String::from("King Ghidorah");
 
         let game_1 = Uuid::new_v4();
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
 
         let player_1 = PlayerId::new_v4();
+        let player_name = String::from("Lizard");
         let (player_1_sender, _) = channel(32);
 
-        assert!(registry.register_player(player_1, player_1_sender).is_ok());
+        assert!(registry.register_player(player_name, player_1, player_1_sender).is_ok());
         assert!(registry.join_game(player_1, game_1).is_ok());
 
         assert!(!registry.is_gm(&player_1, &game_1));
@@ -1289,20 +1371,58 @@ pub mod tests
         let mut registry = GameRegistry::new();
         let gm = PlayerId::new_v4();
         let (gm_sender, _) = channel(32);
+        let gm_name = String::from("King Ghidorah");
 
         let game_1 = Uuid::new_v4();
 
-        assert!(registry.register_player(gm, gm_sender).is_ok());
+        assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
 
         let player_1 = PlayerId::new_v4();
+        let player_name = String::from("Lizard");
         let (player_1_sender, _) = channel(32);
 
-        assert!(registry.register_player(player_1, player_1_sender).is_ok());
+        assert!(registry.register_player(player_name, player_1, player_1_sender).is_ok());
         assert!(registry.join_game(player_1, game_1).is_ok());
 
         assert!(registry.is_gm(&gm, &game_1));
         
     }
+
+    #[test]
+    pub fn get_player_name_will_return_some_an_owned_string_value_holding_the_player_name_if_the_id_is_valid()
+    {
+        init();
+
+        let mut registry = GameRegistry::new();
+        let player_id = PlayerId::new_v4();
+        let (player_sender, _) = channel(32);
+        let player_name = String::from("Guess Who");
+
+        assert!(registry.register_player(player_name.clone(), player_id, player_sender).is_ok());
+        
+        let retrieved_name: Option<String> = registry.get_player_name(&player_id);
+
+        assert!(retrieved_name.is_some());
+        assert_eq!(retrieved_name.unwrap(), player_name);
+    }
+
+    #[test]
+    pub fn get_player_name_will_return_none_if_the_player_id_is_not_registered()
+    {
+        init();
+
+        let mut registry = GameRegistry::new();
+        let player_id = PlayerId::new_v4();
+        let (player_sender, _) = channel(32);
+        let player_name = String::from("Charles Darwin");
+
+        assert!(registry.register_player(player_name, player_id, player_sender).is_ok());
+
+        let retrieved_name: Option<String> = registry.get_player_name(&Uuid::new_v4());
+
+        assert!(retrieved_name.is_none());
+    }
+
 
 }

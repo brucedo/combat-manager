@@ -23,8 +23,9 @@ pub enum Request
     Enumerate,
     New,
     Delete,
-    NewPlayer,
+    NewPlayer(String),
     IsRegistered,
+    PlayerName,
     JoinGame,
     AddCharacter(Character),
     GetFullCast,
@@ -60,6 +61,7 @@ pub enum Outcome
     JoinedGame(GameState),
     PlayerExists,
     PlayerNotExists,
+    PlayerName(String),
     Created(Uuid),
     CastList(Vec<Arc<Character>>),
     Found(Option<Arc<Character>>),
@@ -118,9 +120,9 @@ pub fn dispatch_message2(registry: &mut GameRegistry, authority: &Authority) -> 
 
     match request
     {
-        Request::NewPlayer => {
+        Request::NewPlayer(player_name) => {
             debug!("Request is to register as a player.");
-            register_player(authority, registry)
+            register_player(player_name, authority, registry)
         }
         Request::Enumerate => {
             debug!("Request is for a list of running games.");
@@ -215,12 +217,16 @@ pub fn dispatch_message2(registry: &mut GameRegistry, authority: &Authority) -> 
         Request::IsRegistered => {
             debug!("Request is to determine if the player ID is registered with the runner.");
             (is_player_id_registered(registry, authority), None)
+        },
+        Request::PlayerName => {
+            debug!("Request is to retrieve the name of the player by their ID.");
+            (get_player_name(registry, authority), None)
         }
         _ => (Outcome::Error(Error { message: String::from("Not Yet Implemented"), kind: ErrorKind::InvalidStateAction }), None)
     }
 }
 
-fn register_player(authority: &Authority, player_directory: &mut GameRegistry) -> (Outcome, Option<Notification>)
+fn register_player(player_name: &String, authority: &Authority, player_directory: &mut GameRegistry) -> (Outcome, Option<Notification>)
 {
     match authority.resource_role() 
     {
@@ -235,7 +241,7 @@ fn register_player(authority: &Authority, player_directory: &mut GameRegistry) -
             let (player_sender, player_receiver) = channel(32);
             let player_info = NewPlayer{ player_id, player_1_receiver: player_receiver };   
         
-            match player_directory.register_player(player_id, player_sender)
+            match player_directory.register_player(player_name.clone(), player_id, player_sender)
             {
                 Ok(_) => {(Outcome::NewPlayer(player_info), None)},
                 Err(_) => {unreachable!("Duplicate ID encountered despite explicitly checking for duplicate ID before joining")}
@@ -943,5 +949,21 @@ fn is_player_id_registered(registry: &GameRegistry, authority: &Authority) -> Ou
     {
         Role::RoleUnregistered => Outcome::PlayerNotExists,
         _ => Outcome::PlayerExists
+    }
+}
+
+fn get_player_name(registry: &GameRegistry, authority: &Authority) -> Outcome
+{
+    match authority.resource_role()
+    {
+        Role::RoleUnregistered => Outcome::PlayerNotExists,
+        Role::RoleGM(player_id, _) | Role::RolePlayer(player_id, _) | Role::RoleRegistered(player_id) | Role::RoleObserver(player_id, _) =>
+        {
+            match registry.get_player_name(&player_id)
+            {
+                Some(player_name) => Outcome::PlayerName(player_name),
+                None => Outcome::PlayerNotExists
+            }
+        }
     }
 }
