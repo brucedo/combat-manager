@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
 use super::gear::{Weapon, Armour};
@@ -88,8 +89,7 @@ impl Clone for Character
     }
 }
 
-// #[derive(Copy, Clone, Serialize, Deserialize)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub enum Metatypes
 {
     Human,

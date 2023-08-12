@@ -157,6 +157,7 @@ pub async fn index(PlayerId(player_id): PlayerId, state: State<Arc<crate::http::
             {
                 let mut url = String::from("/game/");
                 url.push_str(&game_uuid.to_string());
+                debug!("Added game {} to model with url {}.", game_name, url);
                 model_summaries.push(GameSummary { game_name, url });
             }
 
@@ -232,10 +233,9 @@ Result<(CookieJar, Redirect), Response<axum::body::Empty<Bytes>>>
     }
 }
 
-// #[post("/game", data = "<new_game>")]
-// #[debug_handler]
 pub async fn create_game(PlayerId(player_id): PlayerId, state: State<Arc<crate::http::state::State<'_>>>, new_game: Form<NewGame>) -> Result<Redirect, Response>
 {
+    debug!("Starting create_game process for game named {}", new_game.game_name);
     let my_sender = state.channel.clone();
 
     match send_and_recv(Some(player_id), None, Request::NewGame(new_game.0.game_name), my_sender).await
@@ -243,46 +243,52 @@ pub async fn create_game(PlayerId(player_id): PlayerId, state: State<Arc<crate::
         Ok(outcome) => Ok(Redirect::to("/")),
         Err(response) => Err(response)
     }
-
-    // match response
-    // {
-    //     Outcome::Created(game_id) =>
-    //     {   
-            
-    //         state.new_game(game_id, session.player_id(), String::from(new_game.game_name), uri!(game_view(game_id)));
-    //         return Ok(Redirect::to(uri!(game_view(game_id))));
-    //     }
-    //     _ =>
-    //     {
-    //         let err = "Boy howdy, something really went south here.  We received a completely unexpected message type from the GameRunner for creating a game.";
-    //         return Err(Error::InternalServerError(Template::render("error_pages/500", context! {action_name: "create a new game", error: err})));
-    //     }
-    // }
-    
-
 }
 
-// #[get("/game/<id>")]
-// pub async fn game_view(id: Uuid, session: Session, state: &State<Metagame<'_>>) -> Result<Template, Error>
-// {
-//     let game_name = state.game_name(id);
 
-//     if game_name.is_none()
-//     {
-//         return Err(Error::NotFound(Template::render("error_pages/404", context!{})));
-//     }
+pub async fn game_view(Path(game_id): Path<Uuid>, PlayerId(player_id): PlayerId, state: State<Arc<crate::http::state::State<'_>>>) -> Response
+{
+    match send_and_recv(Some(player_id), Some(game_id), Request::HasResourceRole, state.channel.clone()).await
+    {
+        Ok(Outcome::PlayerRole(crate::gamerunner::authority::Role::RoleGM(_, _))) => {
+            match (send_and_recv(Some(player_id), Some(game_id), Request::GetPcCast, state.channel.clone()).await, 
+                send_and_recv(Some(player_id), Some(game_id), Request::GetNpcCast, state.channel.clone()).await
+            ) {
+                (Ok(Outcome::CastList(pcs)), Ok(Outcome::CastList(npcs))) => {
+                    let simple_pcs = pcs.drain(..)
+                        .map(|char| SimpleCharacterView {char_id: char.id, char_name: char.name, metatype: char.metatype})
+                        .collect::<Vec<SimpleCharacterView>>();
+                    let simple_npcs = npcs.drain(..)
+                        .map(|char| SimpleCharacterView {char_id: char.id, char_name: char.name, metatype: char.metatype})
+                        .collect::<Vec<SimpleCharacterView>>();
 
-//     if state.validate_ownership( session.player_id(), id)
-//     {
-//         build_gm_view(id, &session, state).await
+                    Response::builder().extension(ModelView2{ view: "gm_view", model: Box::from(GMView{ game_id, pcs: simple_pcs, npcs: simple_npcs }) })
+                        .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
+
+                },
+                (_, _) => {
+
+                }
+            }
+        },
+        Ok(Outcome::PlayerRole(crate::gamerunner::authority::Role::RolePlayer(_, _))) => todo!(),
+        Ok(Outcome::PlayerRole(crate::gamerunner::authority::Role::RoleObserver(_, _))) => todo!(),
+        Ok(Outcome::PlayerRole(_)) => todo!(),
+        Ok(_) => todo!(),
+        Err(response) => response,
+    }
+    
+    // if state.validate_ownership( session.player_id(), id)
+    // {
+    //     build_gm_view(id, &session, state).await
         
-//     }
-//     else 
-//     {
-//         build_player_view(id, &session, state).await
-//     } 
+    // }
+    // else 
+    // {
+    //     build_player_view(id, &session, state).await
+    // } 
 
-// }
+}
 
 // async fn build_player_view(game_id: Uuid, session: &Session, state: &State<Metagame<'_>>) -> Result<Template, Error>
 // {

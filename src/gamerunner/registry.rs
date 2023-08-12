@@ -353,7 +353,9 @@ impl <'a> GameRegistry
 
     pub fn get_game_name(&self, game_id: &GameId) -> Option<String>
     {
+        debug!("Request retrieved to retrieve game name for id {}", game_id);
         let dir_entry = self.games.get(game_id)?;
+        debug!("Game name found: {}", dir_entry.name);
         Some(dir_entry.name.clone())
     }
 }
@@ -488,13 +490,13 @@ pub mod tests
         let player_name = String::from("King Ghidorah");
         let (player_notification_channel, _) = channel(32);
 
-        registry.register_player(player_name, player_id, player_notification_channel);
+        assert!(registry.register_player(player_name, player_id, player_notification_channel).is_ok());
 
         let game_1_id = Uuid::new_v4();
         let game_2_id = Uuid::new_v4();
 
-        registry.new_game(player_id, String::from("Megasaurus Wrex"), game_1_id, Game::new());
-        registry.new_game(player_id, String::from("Duplicate THIS"), game_2_id, Game::new());
+        assert!(registry.new_game(player_id, String::from("Megasaurus Wrex"), game_1_id, Game::new()).is_ok());
+        assert!(registry.new_game(player_id, String::from("Duplicate THIS"), game_2_id, Game::new()).is_ok());
 
         assert!(registry.is_gm(&player_id, &game_1_id));
         assert!(registry.is_gm(&player_id, &game_2_id));

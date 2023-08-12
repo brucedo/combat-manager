@@ -1,5 +1,5 @@
 use log::{debug, error};
-use tokio::sync::mpsc::{Receiver};
+use tokio::sync::mpsc::Receiver;
 use uuid::Uuid;
 
 use crate::gamerunner::{registry::GameRegistry, authority::authorize};

@@ -31,7 +31,7 @@ pub struct GameSummary
     pub url: String,
 }
 
-// #[derive(Serialize)]
+#[derive(Serialize)]
 pub struct GMView
 {
     pub game_id: Uuid,
@@ -39,7 +39,7 @@ pub struct GMView
     pub npcs: Vec<SimpleCharacterView>,
 }
 
-// #[derive(Serialize)]
+#[derive(Serialize)]
 pub struct SimpleCharacterView
 {
     pub char_name: String,

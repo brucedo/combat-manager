@@ -1,12 +1,12 @@
 use std::sync::Arc;
-use std::{collections::HashMap};
+use std::collections::HashMap;
 
 use tokio::sync::mpsc::{channel, Sender, Receiver};
 use tokio::sync::oneshot::Sender as OneShotSender;
 use log::{debug, error};
 use uuid::Uuid;
 
-use crate::{tracker::{game::{Game, ActionType, GameError, ErrorKind as GameErrorKind}, character::Character}};
+use crate::tracker::{game::{Game, ActionType, GameError, ErrorKind as GameErrorKind}, character::Character};
 
 use super::{registry::GameRegistry, GameId, ErrorKind, Error, PlayerId, WhatChanged, authority::{Authority, Role}, CharacterId, notifier::{Notification, PlayerJoined, NewCharacter}};
 
@@ -25,6 +25,7 @@ pub enum Request
     Delete,
     NewPlayer(String),
     IsRegistered,
+    HasResourceRole,
     PlayerName,
     JoinGame,
     AddCharacter(Character),
@@ -61,6 +62,7 @@ pub enum Outcome
     JoinedGame(GameState),
     PlayerExists,
     PlayerNotExists,
+    PlayerRole(Role),
     PlayerName(String),
     Created(Uuid),
     CastList(Vec<Arc<Character>>),
@@ -216,11 +218,15 @@ pub fn dispatch_message2(registry: &mut GameRegistry, authority: &Authority) -> 
         }
         Request::IsRegistered => {
             debug!("Request is to determine if the player ID is registered with the runner.");
-            (is_player_id_registered(registry, authority), None)
+            (is_player_id_registered(authority), None)
         },
         Request::PlayerName => {
             debug!("Request is to retrieve the name of the player by their ID.");
             (get_player_name(registry, authority), None)
+        }
+        Request::HasResourceRole => {
+            debug!("Request is to retrieve the resource role for the specified game.");
+            (player_role(authority), None)
         }
         _ => (Outcome::Error(Error { message: String::from("Not Yet Implemented"), kind: ErrorKind::InvalidStateAction }), None)
     }
@@ -263,7 +269,7 @@ fn enumerate(running_games: &mut GameRegistry ) -> Outcome
     
     for id in games
     {
-        enumeration.push((id, String::from("")));
+        enumeration.push((id, running_games.get_game_name(&id).unwrap()));
     }
 
     return Outcome::Summaries(enumeration);
@@ -271,7 +277,7 @@ fn enumerate(running_games: &mut GameRegistry ) -> Outcome
 
 fn new_game(game_name: String, authority: &Authority, running_games: &mut GameRegistry) -> Outcome
 {
-    debug!("Message to create a new game has been received.");
+    debug!("Message to create a new game has been received for game name {}.", game_name);
     match authority.resource_role()
     {
         Role::RoleUnregistered => {
@@ -943,7 +949,7 @@ fn remaining_initiatives_are(registry: &mut GameRegistry, authority: &Authority)
     
 }
 
-fn is_player_id_registered(registry: &GameRegistry, authority: &Authority) -> Outcome
+fn is_player_id_registered(authority: &Authority) -> Outcome
 {
     match authority.resource_role()
     {
@@ -966,4 +972,17 @@ fn get_player_name(registry: &GameRegistry, authority: &Authority) -> Outcome
             }
         }
     }
+}
+
+fn player_role(authority: &Authority) -> Outcome
+{
+    match authority.resource_role()
+    {
+        Role::RoleGM(player_id, game_id) => Outcome::PlayerRole(Role::RoleGM(*player_id, *game_id)),
+        Role::RolePlayer(player_id, game_id) => Outcome::PlayerRole(Role::RolePlayer(*player_id, *game_id)),
+        Role::RoleObserver(player_id, game_id) => Outcome::PlayerRole(Role::RoleObserver(*player_id, *game_id)),
+        Role::RoleRegistered(player_id) => Outcome::PlayerRole(Role::RoleRegistered(*player_id)),
+        Role::RoleUnregistered => Outcome::PlayerRole(Role::RoleUnregistered),
+    }
+    
 }
