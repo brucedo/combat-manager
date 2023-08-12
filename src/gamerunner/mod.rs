@@ -150,7 +150,8 @@ mod tests
         debug!("Message to register new player has been sent and OK received from response channel.  Player id: {}", gm);
 
         (game_sender, game_receiver) = channel();
-        let msg = Message { player_id: Some(gm), game_id: Some(Uuid::new_v4()), reply_channel: game_sender, msg: Request::New };
+        let game_name = String::from("Spaaaace Madnessssss");
+        let msg = Message { player_id: Some(gm), game_id: Some(Uuid::new_v4()), reply_channel: game_sender, msg: Request::NewGame(game_name) };
 
         debug!("Message to create new game done and about to send.");
 
@@ -399,7 +400,8 @@ mod tests
         };
 
         (game_sender, game_receiver) = channel();
-        msg = Message{ player_id: Some(player_id), game_id: None, reply_channel: game_sender, msg: Request::New };
+        let game_name = String::from("Megabux Supergaming");
+        msg = Message{ player_id: Some(player_id), game_id: None, reply_channel: game_sender, msg: Request::NewGame(game_name) };
         assert!(game_input_channel.send(msg).await.is_ok());
 
         let id: Uuid;
@@ -458,7 +460,8 @@ mod tests
         debug!("Creating new game.");
 
         (game_sender, game_receiver) = channel();
-        msg = Message{ player_id: Some(gm_id), game_id: Some(Uuid::new_v4()), reply_channel: game_sender, msg: Request::New };
+        let game_name = String::from("Thare She Blows: The Worst Campaign in Human History");
+        msg = Message{ player_id: Some(gm_id), game_id: Some(Uuid::new_v4()), reply_channel: game_sender, msg: Request::NewGame(game_name) };
 
         debug!("Game created - supposedly.  Await response.");
         // I should get a Uuid on the oneshot reply channel and not an error.
@@ -1143,7 +1146,8 @@ mod tests
         };
 
         (game_sender, game_receiver) = channel();
-        msg = Message { player_id: Some(gm_id), game_id: Some(Uuid::new_v4()), reply_channel: game_sender, msg: Request::New };
+        let game_name = String::from("Pseudofed - The Illusory Banquet");
+        msg = Message { player_id: Some(gm_id), game_id: Some(Uuid::new_v4()), reply_channel: game_sender, msg: Request::NewGame(game_name) };
 
         assert!(game_input_channel.send(msg).await.is_ok());
         match game_receiver.await
@@ -1227,7 +1231,8 @@ mod tests
         };
 
         (game_sender, game_receiver) = channel::<Outcome>();
-        msg = Message { player_id: Some(player_id), game_id: Some(Uuid::new_v4()), reply_channel: game_sender, msg: Request::New };
+        let game_name = String::from("Pinkerton's Detective Agency & Boulangerie Downstairs");
+        msg = Message { player_id: Some(player_id), game_id: Some(Uuid::new_v4()), reply_channel: game_sender, msg: Request::NewGame(game_name) };
         
 
         assert!(game_input_channel.send(msg).await.is_ok());

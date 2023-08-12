@@ -21,7 +21,7 @@ pub struct Message
 pub enum Request
 {
     Enumerate,
-    New,
+    NewGame(String),
     Delete,
     NewPlayer(String),
     IsRegistered,
@@ -128,9 +128,9 @@ pub fn dispatch_message2(registry: &mut GameRegistry, authority: &Authority) -> 
             debug!("Request is for a list of running games.");
             (enumerate(registry), None)
         }
-        Request::New => {
+        Request::NewGame(game_name) => {
             debug!("Request is for new game.");
-            (new_game(authority, registry), None)
+            (new_game(game_name.clone(), authority, registry), None)
         },
         Request::Delete => {
             debug!("Request is to remove game.");
@@ -269,7 +269,7 @@ fn enumerate(running_games: &mut GameRegistry ) -> Outcome
     return Outcome::Summaries(enumeration);
 }
 
-fn new_game(authority: &Authority, running_games: &mut GameRegistry) -> Outcome
+fn new_game(game_name: String, authority: &Authority, running_games: &mut GameRegistry) -> Outcome
 {
     debug!("Message to create a new game has been received.");
     match authority.resource_role()
@@ -282,7 +282,7 @@ fn new_game(authority: &Authority, running_games: &mut GameRegistry) -> Outcome
             debug!("Requester has been identified has registered.");
             let game_id = Uuid::new_v4();
             debug!("New game ID generated: {}", game_id);
-            match running_games.new_game(*player_id, game_id, Game::new()) {
+            match running_games.new_game(*player_id, game_name, game_id, Game::new()) {
                 Ok(()) => {
                     debug!("Outcome of new_game successful.");
                     Outcome::Created(game_id)

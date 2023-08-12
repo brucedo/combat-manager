@@ -140,7 +140,7 @@ fn read_text_file(file_path: &PathBuf) -> Result<(String, String), Error>
 }
 
 // #[debug_handler]
-pub async fn index(PlayerId(player_id): PlayerId, state: State<Arc<crate::http::state::State<'_>>>) -> Response//<axum::body::Empty<Bytes>>
+pub async fn index(PlayerId(player_id): PlayerId, state: State<Arc<crate::http::state::State<'_>>>) -> Response
 {
     debug!("Request for index received.");
 
@@ -200,15 +200,13 @@ Result<(CookieJar, Redirect), Response<axum::body::Empty<Bytes>>>
     debug!("Processing POST to register request.");
 
     let (game_sender, game_receiver) = channel();
-    let msg = Message { game_id: None, player_id: None, reply_channel: game_sender, msg: Request::NewPlayer(form_data.player_handle.clone()) };
+    let msg = Message { game_id: None, player_id: None, reply_channel: game_sender, msg: Request::NewPlayer(form_data.0.player_handle) };
 
     if let Err(_) = state.channel.clone().send(msg).await
     {
         debug!("Register player message sent and failed");
-        let mut error = HashMap::new();
-        error.insert(String::from("error"), String::from("The GameRunner channel errored out.  The administrator will likely need to restart the system."));
         return Err(Response::builder()
-            .extension(ModelView{ view: String::from("500.html"), model: error })
+            .extension(ModelView2{ view: "500", model: Box::from(crate::http::models::Error{ error: "The GameRunner communication channel has closed unexpectedly.  The administrator will need to restart the system." }) })
             .body(axum::body::Empty::<Bytes>::new()).unwrap());
     }
 
@@ -221,47 +219,48 @@ Result<(CookieJar, Redirect), Response<axum::body::Empty<Bytes>>>
         },
         Ok(_) => {
             error!("Register player failed - unexpected return message type.");
-            let mut error = HashMap::new();
-            error.insert(String::from("error"), String::from("The GameRunner is spewing nonsense.  Someone forgot to pull the defrangulator."));
             Err(Response::builder()
-                .extension(ModelView{ view: String::from("500.html"), model: error})
+                .extension(ModelView2{ view: "500", model: Box::from(crate::http::models::Error{ error: "The GameRunner is spewing nonsense.  Someone forgot to pull the defrangulator." })})
                 .body(axum::body::Empty::<Bytes>::new()).unwrap())
         }
         Err(_) => {
             error!("Register player failed - channel broke");
-            let mut error = HashMap::new();
-            error.insert(String::from("error"), String::from("The response channel to your registration request errored out.  The administrator will likely need to retart the system."));
             Err(Response::builder()
-                .extension(ModelView{ view: String::from("500.html"), model: error })
+                .extension(ModelView2{ view: "500", model: Box::from(crate::http::models::Error{error: "The response channel to your registration request errored out.  The administrator will likely need to retart the system."}) })
                 .body(axum::body::Empty::<Bytes>::new()).unwrap())
         },
     }
 }
 
 // #[post("/game", data = "<new_game>")]
-// pub async fn create_game(state: &State<Metagame<'_>>, session: Session, new_game: Form<NewGame<'_>>) -> Result<Redirect, Error>
-// {
-//     let my_sender = state.game_runner_pipe.clone();
+// #[debug_handler]
+pub async fn create_game(PlayerId(player_id): PlayerId, state: State<Arc<crate::http::state::State<'_>>>, new_game: Form<NewGame>) -> Result<Redirect, Response>
+{
+    let my_sender = state.channel.clone();
 
-//     let response = send_and_recv(Uuid::new_v4(), Request::New, my_sender).await?;
+    match send_and_recv(Some(player_id), None, Request::NewGame(new_game.0.game_name), my_sender).await
+    {
+        Ok(outcome) => Ok(Redirect::to("/")),
+        Err(response) => Err(response)
+    }
 
-//     match response
-//     {
-//         Outcome::Created(game_id) =>
-//         {   
+    // match response
+    // {
+    //     Outcome::Created(game_id) =>
+    //     {   
             
-//             state.new_game(game_id, session.player_id(), String::from(new_game.game_name), uri!(game_view(game_id)));
-//             return Ok(Redirect::to(uri!(game_view(game_id))));
-//         }
-//         _ =>
-//         {
-//             let err = "Boy howdy, something really went south here.  We received a completely unexpected message type from the GameRunner for creating a game.";
-//             return Err(Error::InternalServerError(Template::render("error_pages/500", context! {action_name: "create a new game", error: err})));
-//         }
-//     }
+    //         state.new_game(game_id, session.player_id(), String::from(new_game.game_name), uri!(game_view(game_id)));
+    //         return Ok(Redirect::to(uri!(game_view(game_id))));
+    //     }
+    //     _ =>
+    //     {
+    //         let err = "Boy howdy, something really went south here.  We received a completely unexpected message type from the GameRunner for creating a game.";
+    //         return Err(Error::InternalServerError(Template::render("error_pages/500", context! {action_name: "create a new game", error: err})));
+    //     }
+    // }
     
 
-// }
+}
 
 // #[get("/game/<id>")]
 // pub async fn game_view(id: Uuid, session: Session, state: &State<Metagame<'_>>) -> Result<Template, Error>

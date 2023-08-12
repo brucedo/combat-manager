@@ -25,6 +25,7 @@ pub struct PlayerDirectoryEntry
 pub struct GameDirectoryEntry
 {
     pub game: Game,
+    pub name: String,
     pub gm: Uuid,
     pub players: HashSet<PlayerId>,
 }
@@ -43,13 +44,13 @@ impl <'a> GameRegistry
         GameRegistry { games: HashMap::new(), players: HashMap::new() }
     }
 
-    pub fn new_game(&'a mut self, player_id: PlayerId, game_id: GameId, game: Game) -> Result<(),()>
+    pub fn new_game(&'a mut self, player_id: PlayerId, game_name: String, game_id: GameId, game: Game) -> Result<(),()>
     {
         debug!("Starting new_game()");
         if self.players.contains_key(&player_id)
         {
             debug!("Player id {} is registered as a player.", player_id);
-            let mut directory_entry = GameDirectoryEntry{ game, gm: player_id, players: HashSet::new() };
+            let mut directory_entry = GameDirectoryEntry{ game, name: game_name, gm: player_id, players: HashSet::new() };
             directory_entry.players.insert(player_id);
             self.games.insert(game_id, directory_entry);
             Ok(())
@@ -322,26 +323,6 @@ impl <'a> GameRegistry
                 None
             }, 
         }
-        // if let Some(player_entry) = self.players.get_mut(player_id)
-        // {
-        //     let mut temp = HashSet::<CharacterId>::new();
-        //     let characters = player_entry.player_characters.get_mut(game_id).unwrap_or(&mut temp);
-            
-
-        //     if let Some(game) = self.games.get_mut(game_id)
-        //     {
-        //         let character_id = game.game.add_cast_member(character);
-        //         characters.insert(character_id);
-        //         Some(character_id)
-        //     }
-        //     else
-        //     {
-        //         None
-        //     }
-        // }
-        // else {
-        //     None
-        // }
     }
 
     pub fn players_by_character(&self, game_id: &GameId, char_id: &CharacterId) -> Option<&PlayerId>
@@ -368,6 +349,12 @@ impl <'a> GameRegistry
     {
         let dir_entry = self.players.get(player_id)?;
         Some(dir_entry.player_name.clone())
+    }
+
+    pub fn get_game_name(&self, game_id: &GameId) -> Option<String>
+    {
+        let dir_entry = self.games.get(game_id)?;
+        Some(dir_entry.name.clone())
     }
 }
 
@@ -401,7 +388,7 @@ pub mod tests
         let id = Uuid::new_v4();
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm ,id, game).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), id, game).is_ok());
 
         assert!(registry.get_mut_game(&id).is_some());
     }
@@ -428,7 +415,7 @@ pub mod tests
         let id = Uuid::new_v4();
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, id, game).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), id, game).is_ok());
 
         assert!(registry.get_game(&id).is_some() );
     }
@@ -445,7 +432,7 @@ pub mod tests
         let id = Uuid::new_v4();
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, id, game).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), id, game).is_ok());
 
         assert!(registry.get_game(&Uuid::new_v4()).is_none());
     }
@@ -493,6 +480,27 @@ pub mod tests
     }
 
     #[test]
+    pub fn a_registered_player_becomes_the_gm_of_any_game_they_create()
+    {
+        let mut registry = GameRegistry::new();
+
+        let player_id = PlayerId::new_v4();
+        let player_name = String::from("King Ghidorah");
+        let (player_notification_channel, _) = channel(32);
+
+        registry.register_player(player_name, player_id, player_notification_channel);
+
+        let game_1_id = Uuid::new_v4();
+        let game_2_id = Uuid::new_v4();
+
+        registry.new_game(player_id, String::from("Megasaurus Wrex"), game_1_id, Game::new());
+        registry.new_game(player_id, String::from("Duplicate THIS"), game_2_id, Game::new());
+
+        assert!(registry.is_gm(&player_id, &game_1_id));
+        assert!(registry.is_gm(&player_id, &game_2_id));
+    }
+
+    #[test]
     pub fn players_who_is_registered_may_join_a_game()
     {
         let mut registry = GameRegistry::new();
@@ -507,7 +515,7 @@ pub mod tests
         let game = Game::new();
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_id, game).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_id, game).is_ok());
         assert!(registry.register_player(player_name, player_id, sender).is_ok());
 
         assert!(registry.join_game(player_id, game_id).is_ok());
@@ -526,7 +534,7 @@ pub mod tests
         let game = Game::new();
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_id, game).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_id, game).is_ok());
 
         assert!(registry.join_game(player_id, game_id).is_err());
     }
@@ -542,7 +550,7 @@ pub mod tests
         let game_id = Uuid::new_v4();
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_id, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_id, Game::new()).is_ok());
 
         assert!(registry.gm_id(&game_id).is_some());
         let retrieved_id: &PlayerId = registry.gm_id(&game_id).unwrap();
@@ -561,7 +569,7 @@ pub mod tests
         let game_id = Uuid::new_v4();
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_id, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_id, Game::new()).is_ok());
 
         assert!(registry.gm_sender(&game_id).is_some());
         let sender: Sender<Arc<WhatChanged>> = registry.gm_sender(&game_id).unwrap();
@@ -593,7 +601,7 @@ pub mod tests
         let game = Game::new();
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_id, game).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_id, game).is_ok());
         assert!(registry.register_player(player_name, player_id, sender).is_ok());
 
         let player_comms = registry.get_player_sender(&player_id).unwrap();
@@ -621,7 +629,7 @@ pub mod tests
         let mork = Character::new_pc(crate::tracker::character::Metatypes::Orc, String::from("Orcifer"));
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_1, Game::new()).is_ok());
         
         assert!(registry.register_player(player_name, player_1, player_sender).is_ok());
         assert!(registry.join_game(player_1, game_1).is_ok());
@@ -654,8 +662,8 @@ pub mod tests
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
         assert!(registry.register_player(player_name, player_1, player_sender).is_ok());
 
-        assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
-        assert!(registry.new_game(gm, game_2, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_1, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_2, Game::new()).is_ok());
 
         assert!(registry.join_game(player_1, game_1).is_ok());
         assert!(registry.join_game(player_1, game_2).is_ok());
@@ -692,9 +700,9 @@ pub mod tests
         let player_name = String::from("Lizard");
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
-        assert!(registry.new_game(gm, game_2, Game::new()).is_ok());
-        assert!(registry.new_game(gm, game_3, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_1, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_2, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_3, Game::new()).is_ok());
         assert!(registry.register_player(player_name, player_1, sender).is_ok());
 
         assert!(registry.join_game(player_1, game_1).is_ok());
@@ -724,9 +732,9 @@ pub mod tests
         let game_3 = Uuid::new_v4();
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
-        assert!(registry.new_game(gm, game_2, Game::new()).is_ok());
-        assert!(registry.new_game(gm, game_3, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_1, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_2, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_3, Game::new()).is_ok());
 
         let games = registry.enumerate_games();
 
@@ -797,7 +805,7 @@ pub mod tests
         let player_name = String::from("Lizard");
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_1, Game::new()).is_ok());
         assert!(registry.register_player(player_name, player_1, sender).is_ok());
 
         assert!(registry.games_by_player(Uuid::new_v4()).is_none());
@@ -815,7 +823,7 @@ pub mod tests
         let gm_name = String::from("King Ghidorah");
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_1, Game::new()).is_ok());
 
         let player_1 = Uuid::new_v4();
         let player_name = String::from("Lizard");
@@ -852,7 +860,7 @@ pub mod tests
         assert!(registry.register_player(player_3_name, player_3, sender_3).is_ok());
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_1, Game::new()).is_ok());
 
         assert!(registry.join_game(player_1, game_1).is_ok());
         assert!(registry.join_game(player_2, game_1).is_ok());
@@ -883,7 +891,7 @@ pub mod tests
         let (sender_1, _) = channel(32);
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_1, Game::new()).is_ok());
         assert!(registry.register_player(player_name, player_1, sender_1).is_ok());
         
         let players = registry.players_by_game(&game_1);
@@ -909,7 +917,7 @@ pub mod tests
         let (sender, _) = channel(32);
     
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_1, Game::new()).is_ok());
         assert!(registry.register_player(player_name, player_1, sender).is_ok());
 
         assert!(registry.join_game(player_1, game_1).is_ok());
@@ -936,7 +944,7 @@ pub mod tests
         let game = Game::new();
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_id, game).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_id, game).is_ok());
 
         assert!(registry.register_player(player_1_name, player_1, sender).is_ok());
         (sender, _) = channel(32);
@@ -965,7 +973,7 @@ pub mod tests
         let game = Game::new();
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_id, game).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_id, game).is_ok());
 
         assert!(registry.leave_game(player_1, game_id).is_err());
     }
@@ -993,7 +1001,7 @@ pub mod tests
         let game_id = Uuid::new_v4();
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_id, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_id, Game::new()).is_ok());
         assert!(registry.register_player(player_1_name, player_1, sender_1).is_ok());
         assert!(registry.register_player(player_2_name, player_2, sender_2).is_ok());
         assert!(registry.register_player(player_3_name, player_3, sender_3).is_ok());
@@ -1042,8 +1050,8 @@ pub mod tests
         let game_2 = Uuid::new_v4();
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
-        assert!(registry.new_game(gm, game_2, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_1, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_2, Game::new()).is_ok());
         assert!(registry.register_player(player_1_name, player_1, sender_1).is_ok());
         assert!(registry.register_player(player_2_name, player_2, sender_2).is_ok());
 
@@ -1083,8 +1091,8 @@ pub mod tests
         let game_2 = Uuid::new_v4();
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
-        assert!(registry.new_game(gm, game_2, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_1, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_2, Game::new()).is_ok());
         assert!(registry.register_player(player_1_name, player_1, sender_1).is_ok());
         assert!(registry.register_player(player_2_name, player_2, sender_2).is_ok());
 
@@ -1111,7 +1119,7 @@ pub mod tests
 
         assert!((registry.register_player(player_name, player_1, sender_1).is_ok()));
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_1, Game::new()).is_ok());
 
         assert!(registry.join_game(player_1, game_1).is_ok());
 
@@ -1148,7 +1156,7 @@ pub mod tests
         let game_1 = Uuid::new_v4();
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_1, Game::new()).is_ok());
         assert!(registry.register_player(player_1_name, player_1, sender_1).is_ok());
         assert!(registry.register_player(player_2_name, player_2, sender_2).is_ok());
 
@@ -1175,7 +1183,7 @@ pub mod tests
         let game_1 = Uuid::new_v4();
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_1, Game::new()).is_ok());
         assert!(registry.register_player(player_1_name, player_1, sender_1).is_ok());
 
         assert!(!registry.game_has_player(&Uuid::new_v4(), &player_1))
@@ -1198,7 +1206,7 @@ pub mod tests
         let game_1 = Uuid::new_v4();
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_1, Game::new()).is_ok());
         assert!(registry.register_player(player_name, player_1, sender_1).is_ok());
 
         assert!(!registry.game_has_player(&game_1, &Uuid::new_v4()));
@@ -1225,8 +1233,8 @@ pub mod tests
         let game_2 = Uuid::new_v4();
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
-        assert!(registry.new_game(gm, game_2, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_1, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_2, Game::new()).is_ok());
 
         assert!(registry.register_player(player_1_name, player_1, sender_1).is_ok());
         assert!(registry.register_player(player_2_name, player_2, sender_2).is_ok());
@@ -1254,7 +1262,7 @@ pub mod tests
         let game_1 = Uuid::new_v4();
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_1, Game::new()).is_ok()); 
+        assert!(registry.new_game(gm, String::from("Made up"), game_1, Game::new()).is_ok()); 
 
         assert!(registry.register_player(player_name, player_1, sender_1).is_ok());
 
@@ -1280,7 +1288,7 @@ pub mod tests
         let game_1 = Uuid::new_v4();
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_1, Game::new()).is_ok());
         assert!(registry.register_player(player_name, player_1, sender_1).is_ok());
 
         assert!(!registry.player_in_game(Uuid::new_v4(), Uuid::new_v4()));
@@ -1299,7 +1307,7 @@ pub mod tests
         let game_1 = Uuid::new_v4();
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_1, Game::new()).is_ok());
         
         assert!(registry.is_game(&game_1));
     }
@@ -1317,7 +1325,7 @@ pub mod tests
         let game_1 = Uuid::new_v4();
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_1, Game::new()).is_ok());
 
         assert!(!registry.is_game(&Uuid::new_v4()));
     }
@@ -1335,7 +1343,7 @@ pub mod tests
         let game_1 = Uuid::new_v4();
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_1, Game::new()).is_ok());
     }
 
     #[test]
@@ -1351,7 +1359,7 @@ pub mod tests
         let game_1 = Uuid::new_v4();
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_1, Game::new()).is_ok());
 
         let player_1 = PlayerId::new_v4();
         let player_name = String::from("Lizard");
@@ -1376,7 +1384,7 @@ pub mod tests
         let game_1 = Uuid::new_v4();
 
         assert!(registry.register_player(gm_name, gm, gm_sender).is_ok());
-        assert!(registry.new_game(gm, game_1, Game::new()).is_ok());
+        assert!(registry.new_game(gm, String::from("Made up"), game_1, Game::new()).is_ok());
 
         let player_1 = PlayerId::new_v4();
         let player_name = String::from("Lizard");
@@ -1424,5 +1432,43 @@ pub mod tests
         assert!(retrieved_name.is_none());
     }
 
+    #[test]
+    pub fn get_game_will_return_some_wrapping_the_name_if_the_game_id_maps_to_a_real_game()
+    {
+        init();
 
+        let mut registry = GameRegistry::new();
+        let player_id = PlayerId::new_v4();
+        let (player_sender, _) = channel(32);
+        let player_name = String::from("The Wizard");
+
+        assert!(registry.register_player(player_name, player_id.clone(), player_sender).is_ok());
+
+        let game_id = Uuid::new_v4();
+        let game_name = String::from("Rocks Fall");
+        
+        assert!(registry.new_game(player_id, game_name, game_id.clone(), Game::new()).is_ok());
+
+        assert!(registry.get_game_name(&game_id).is_some());
+    }
+
+    #[test]
+    pub fn get_game_name_will_return_none_if_the_game_id_does_not_map_to_a_game()
+    {
+        init();
+
+        let mut registry = GameRegistry::new();
+        let player_id = PlayerId::new_v4();
+        let (player_sender, _) = channel(32);
+        let player_name = String::from("The Wizard");
+
+        assert!(registry.register_player(player_name, player_id, player_sender).is_ok());
+
+        let game_id = Uuid::new_v4();
+        let game_name = String::from("Rocks Fall");
+        
+        assert!(registry.new_game(player_id, game_name, game_id, Game::new()).is_ok());
+
+        assert!(registry.get_game_name(&Uuid::new_v4()).is_none());
+    }
 }

@@ -79,10 +79,10 @@ pub struct PlayerView
 // }
 
 
-// #[derive(FromForm)]
-pub struct NewGame<'r>
+#[derive(Deserialize)]
+pub struct NewGame
 {
-    pub game_name: &'r str
+    pub game_name: String
 }
 
 // #[derive(FromForm)]
