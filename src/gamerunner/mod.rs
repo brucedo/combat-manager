@@ -613,15 +613,6 @@ mod tests
                 }
             }
         }
-
-        // match melf_notifications.recv().await
-        // {
-        //     Some(change_notice) =>  match change_notice {
-        //         WhatChanged::GameEnded => {},
-        //         _ => {panic!("Should have received game ended notification")}
-        //     },
-        //     None => { panic!("Should have produced a WhatChanged notification.")}
-        // }
     }
 
 
@@ -737,6 +728,61 @@ mod tests
             Outcome::CharacterAdded(_) => {panic!("This add should have failed - should have received Error rather than CharacterAdded.")},
             _ => {panic!("Another message was triggered, but add new character should result only in error or character added.")}
         }
+    }
+
+    #[tokio::test]
+    pub async fn a_player_may_add_multiple_characters_and_review_them_with_get_pc_cast()
+    {
+        let game_channel = init();
+
+        let (mut game_sender, mut game_receiver) = channel::<Outcome>();
+        
+        let mut msg = Message { player_id: None, game_id: None, reply_channel: game_sender, msg: Request::NewPlayer(String::from("Barnacles McGee"))};
+        assert!(game_channel.send(msg).await.is_ok());
+
+        let player_id = match game_receiver.await {Ok(Outcome::NewPlayer(player_id)) => player_id.player_id, _ => panic!("Registration failed.")};
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+        msg = Message { player_id: Some(player_id.clone()), game_id: None, reply_channel: game_sender, msg: Request::NewGame(String::from("Underwater Otter"))};
+        assert!(game_channel.send(msg).await.is_ok());
+
+        let game_id = match game_receiver.await { Ok(Outcome::Created(game_id)) => game_id, _ => panic!("Failed to create game.")};
+        
+        (game_sender, game_receiver) = channel::<Outcome>();
+        let char = Character::new_pc(Metatypes::Dwarf, String::from("Thring Fringlonger"));
+        msg = Message { player_id: Some(player_id.clone()), game_id: Some(game_id.clone()), reply_channel: game_sender, msg: Request::AddCharacter(char)};
+        assert!(game_channel.send(msg).await.is_ok());
+
+        let thring_id = match game_receiver.await { Ok(Outcome::CharacterAdded((_, char_id))) => char_id, _ => panic!("Character add failed.")};
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+        let char = Character::new_pc(Metatypes::Dwarf, String::from("Hoola Hupz"));
+        msg = Message { player_id: Some(player_id.clone()), game_id: Some(game_id.clone()), reply_channel: game_sender, msg: Request::AddCharacter(char)};
+        assert!(game_channel.send(msg).await.is_ok());
+
+        let hupz_id = match game_receiver.await { Ok(Outcome::CharacterAdded((_, char_id))) => char_id, _ => panic!("Character add failed.")};
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+        msg = Message { player_id: Some(player_id.clone()), game_id: Some(game_id.clone()), reply_channel: game_sender, msg: Request::GetPcCast};
+        assert!(game_channel.send(msg).await.is_ok());
+
+        let pcs = match game_receiver.await { Ok(Outcome::CastList(chars)) => chars, _ => panic!("Retrieve player characters failed")};
+
+        assert_eq!(2, pcs.len());
+        assert!(pcs.iter().all(|cs| cs.id == thring_id || cs.id == hupz_id))
+    }
+
+    
+    #[tokio::test]
+    pub async fn a_player_may_not_view_another_players_characters_with_get_pc_cast()
+    {
+        assert!(false)
+    }
+
+    #[tokio::test]
+    pub async fn a_gm_will_always_receive_the_entire_cast_list_with_get_pc_cast()
+    {
+        assert!(false)
     }
 
     #[tokio::test]

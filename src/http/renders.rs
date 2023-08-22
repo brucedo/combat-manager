@@ -254,12 +254,13 @@ pub async fn game_view(Path(game_id): Path<Uuid>, PlayerId(player_id): PlayerId,
             match (send_and_recv(Some(player_id), Some(game_id), Request::GetPcCast, state.channel.clone()).await, 
                 send_and_recv(Some(player_id), Some(game_id), Request::GetNpcCast, state.channel.clone()).await
             ) {
-                (Ok(Outcome::CastList(pcs)), Ok(Outcome::CastList(npcs))) => {
+                (Ok(Outcome::CastList(mut pcs)), Ok(Outcome::CastList(mut npcs))) => {
                     let simple_pcs = pcs.drain(..)
-                        .map(|char| SimpleCharacterView {char_id: char.id, char_name: char.name, metatype: char.metatype})
+                        .map(|char| {
+                            SimpleCharacterView { char_id: char.id.clone(), char_name: char.name.clone(), metatype: char.metatype.clone() } })
                         .collect::<Vec<SimpleCharacterView>>();
                     let simple_npcs = npcs.drain(..)
-                        .map(|char| SimpleCharacterView {char_id: char.id, char_name: char.name, metatype: char.metatype})
+                        .map(|char| SimpleCharacterView {char_id: char.id.clone(), char_name: char.name.clone(), metatype: char.metatype.clone()})
                         .collect::<Vec<SimpleCharacterView>>();
 
                     Response::builder().extension(ModelView2{ view: "gm_view", model: Box::from(GMView{ game_id, pcs: simple_pcs, npcs: simple_npcs }) })
@@ -267,11 +268,16 @@ pub async fn game_view(Path(game_id): Path<Uuid>, PlayerId(player_id): PlayerId,
 
                 },
                 (_, _) => {
-
+                    Response::builder()
+                        .extension(ModelView2{ view: "500", model: Box::from(crate::http::models::Error{ error: "The GameRunner is spewing nonsense.  Someone forgot to pull the defrangulator." })})
+                        .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
                 }
             }
         },
-        Ok(Outcome::PlayerRole(crate::gamerunner::authority::Role::RolePlayer(_, _))) => todo!(),
+        Ok(Outcome::PlayerRole(crate::gamerunner::authority::Role::RolePlayer(_, _))) => {
+            todo!()
+            // match send_and_recv(Some(player_id), Some(game_id), Request::GetCharacter(()), sender)
+        },
         Ok(Outcome::PlayerRole(crate::gamerunner::authority::Role::RoleObserver(_, _))) => todo!(),
         Ok(Outcome::PlayerRole(_)) => todo!(),
         Ok(_) => todo!(),
@@ -319,52 +325,6 @@ pub async fn game_view(Path(game_id): Path<Uuid>, PlayerId(player_id): PlayerId,
 //     Ok(Template::render("player_view", view))
 // }
 
-// async fn build_gm_view(game_id: Uuid, _sesion: &Session, state: &State<Metagame<'_>>) -> Result<Template, Error>
-// {
-//     let outcome = send_and_recv(game_id, Request::GetPcCast, state.game_runner_pipe.clone()).await?;
-//     let mut pcs: Vec<SimpleCharacterView>;
-//     let mut npcs: Vec<SimpleCharacterView>;
-//     let _game_name = state.game_name(game_id).unwrap_or(String::from(""));
-
-//     match outcome
-//     {
-//         Outcome::CastList(cast) => 
-//         {
-//             pcs = Vec::with_capacity(cast.len());
-//             debug!("Converting Character to SimpleCharacterView for {} records", cast.len());
-//             for member in cast
-//             {
-//                 pcs.push(SimpleCharacterView::from(member.as_ref()));
-//             }
-//         }
-//         _ => 
-//         {
-//             let err = "Boy howdy, something really went south here.  We received a completely unexpected message type from the GameRunner for creating a game.";
-//             return Err(Error::InternalServerError(Template::render("error_pages/500", context! {action_name: "create a new game", error: err})));
-//         }
-//     }
-
-//     let outcome = send_and_recv(game_id, Request::GetNpcCast, state.game_runner_pipe.clone()).await?;
-    
-//     match outcome
-//     {
-//         Outcome::CastList(cast) => 
-//         {
-//             npcs = Vec::with_capacity(cast.len());
-//             for member in cast
-//             {
-//                 npcs.push(SimpleCharacterView::from(member.as_ref()));
-//             }
-//         }
-//         _ => 
-//         {
-//             let err = "Boy howdy, something really went south here.  We received a completely unexpected message type from the GameRunner for creating a game.";
-//             return Err(Error::InternalServerError(Template::render("error_pages/500", context! {action_name: "create a new game", error: err})));
-//         }
-//     }
-
-//     return Ok(Template::render("gm_view", GMView { game_id, pcs, npcs }));
-// }
 
 // #[post("/game/<id>/add_npc", data="<npc>")]
 // pub async fn add_npc(id: Uuid, session: Session, state: &State<Metagame<'_>>, npc: Form<NewCharacter<'_>>) -> Result<Redirect, Error>
