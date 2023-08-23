@@ -275,8 +275,29 @@ pub async fn game_view(Path(game_id): Path<Uuid>, PlayerId(player_id): PlayerId,
             }
         },
         Ok(Outcome::PlayerRole(crate::gamerunner::authority::Role::RolePlayer(_, _))) => {
-            todo!()
-            // match send_and_recv(Some(player_id), Some(game_id), Request::GetCharacter(()), sender)
+            match (
+                send_and_recv(Some(player_id), Some(game_id), Request::GetPcCast, state.channel.clone()).await,
+                send_and_recv(Some(player_id), Some(game_id), Request::PlayerName, state.channel.clone()).await
+            )
+            {                
+                (Ok(Outcome::CastList(mut pcs)), Ok(Outcome::PlayerName(name))) => {
+                    let simple_pcs = pcs.drain(..)
+                        .map(|char| {
+                            SimpleCharacterView { char_id: char.id.clone(), char_name: char.name.clone(), metatype: char.metatype.clone() } })
+                        .collect::<Vec<SimpleCharacterView>>();
+
+                    Response::builder().extension(ModelView2{ 
+                        view: "player_view", 
+                        model: Box::from(PlayerView { player_handle: name, game_id, game_name: todo!(), character_state: Some(simple_pcs) })
+                    })
+                    .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
+                },
+                (_, _) => {
+                    Response::builder()
+                        .extension(ModelView2{ view: "500", model: Box::from(crate::http::models::Error{ error: "The GameRunner is spewing nonsense.  Someone forgot to pull the defrangulator." })})
+                        .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()                    
+                }
+            }
         },
         Ok(Outcome::PlayerRole(crate::gamerunner::authority::Role::RoleObserver(_, _))) => todo!(),
         Ok(Outcome::PlayerRole(_)) => todo!(),

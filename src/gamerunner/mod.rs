@@ -772,17 +772,133 @@ mod tests
         assert!(pcs.iter().all(|cs| cs.id == thring_id || cs.id == hupz_id))
     }
 
-    
+
     #[tokio::test]
     pub async fn a_player_may_not_view_another_players_characters_with_get_pc_cast()
     {
-        assert!(false)
+        let game_channel = init();
+
+        let (mut game_sender, mut game_receiver) = channel::<Outcome>();
+        
+        let mut msg = Message { player_id: None, game_id: None, reply_channel: game_sender, msg: Request::NewPlayer(String::from("Barnacles McGee"))};
+        assert!(game_channel.send(msg).await.is_ok());
+
+        let gm_id = match game_receiver.await {Ok(Outcome::NewPlayer(player_id)) => player_id.player_id, _ => panic!("Registration failed.")};
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+        msg = Message { player_id: Some(gm_id.clone()), game_id: None, reply_channel: game_sender, msg: Request::NewGame(String::from("Underwater Otter"))};
+        assert!(game_channel.send(msg).await.is_ok());
+
+        let game_id = match game_receiver.await { Ok(Outcome::Created(game_id)) => game_id, _ => panic!("Failed to create game.")};
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+        let mut msg = Message { player_id: None, game_id: None, reply_channel: game_sender, msg: Request::NewPlayer(String::from("Barnacles McGee"))};
+        assert!(game_channel.send(msg).await.is_ok());
+
+        let player_1_id = match game_receiver.await {Ok(Outcome::NewPlayer(player_id)) => player_id.player_id, _ => panic!("Registration failed.")};
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+        msg = Message { player_id: Some(player_1_id), game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame};
+        assert!(game_channel.send(msg).await.is_ok());
+        assert!(game_receiver.await.is_ok());
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+        let char = Character::new_pc(Metatypes::Dwarf, String::from("Thring Fringlonger"));
+        msg = Message { player_id: Some(player_1_id.clone()), game_id: Some(game_id.clone()), reply_channel: game_sender, msg: Request::AddCharacter(char)};
+        assert!(game_channel.send(msg).await.is_ok());
+
+        let thring_id = match game_receiver.await { Ok(Outcome::CharacterAdded((_, char_id))) => char_id, _ => panic!("Character add failed.")};
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+        let mut msg = Message { player_id: None, game_id: None, reply_channel: game_sender, msg: Request::NewPlayer(String::from("Johnny B. Goode"))};
+        assert!(game_channel.send(msg).await.is_ok());
+
+        let player_2_id = match game_receiver.await {Ok(Outcome::NewPlayer(player_id)) => player_id.player_id, _ => panic!("Registration failed.")};
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+        msg = Message { player_id: Some(player_2_id), game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame};
+        assert!(game_channel.send(msg).await.is_ok());
+        assert!(game_receiver.await.is_ok());
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+        let char = Character::new_pc(Metatypes::Dwarf, String::from("Thring Fringlonger"));
+        msg = Message { player_id: Some(player_2_id.clone()), game_id: Some(game_id.clone()), reply_channel: game_sender, msg: Request::AddCharacter(char)};
+        assert!(game_channel.send(msg).await.is_ok());
+
+        match game_receiver.await { Ok(Outcome::CharacterAdded((_, _))) => {}, _ => panic!("Character add failed.")};
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+        msg = Message { player_id: Some(player_1_id.clone()), game_id: Some(game_id.clone()), reply_channel: game_sender, msg: Request::GetPcCast};
+        assert!(game_channel.send(msg).await.is_ok());
+
+        let barnacles_chars = match game_receiver.await {Ok(Outcome::CastList(chars)) => chars, _ => panic!("PC retrieval failed")};
+
+        assert_eq!(1, barnacles_chars.len());
+        assert_eq!(thring_id, barnacles_chars.get(0).unwrap().id);
     }
 
     #[tokio::test]
     pub async fn a_gm_will_always_receive_the_entire_cast_list_with_get_pc_cast()
     {
-        assert!(false)
+        let game_channel = init();
+
+        let (mut game_sender, mut game_receiver) = channel::<Outcome>();
+        
+        let mut msg = Message { player_id: None, game_id: None, reply_channel: game_sender, msg: Request::NewPlayer(String::from("Barnacles McGee"))};
+        assert!(game_channel.send(msg).await.is_ok());
+
+        let gm_id = match game_receiver.await {Ok(Outcome::NewPlayer(player_id)) => player_id.player_id, _ => panic!("Registration failed.")};
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+        msg = Message { player_id: Some(gm_id.clone()), game_id: None, reply_channel: game_sender, msg: Request::NewGame(String::from("Underwater Otter"))};
+        assert!(game_channel.send(msg).await.is_ok());
+
+        let game_id = match game_receiver.await { Ok(Outcome::Created(game_id)) => game_id, _ => panic!("Failed to create game.")};
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+        let mut msg = Message { player_id: None, game_id: None, reply_channel: game_sender, msg: Request::NewPlayer(String::from("Barnacles McGee"))};
+        assert!(game_channel.send(msg).await.is_ok());
+
+        let player_1_id = match game_receiver.await {Ok(Outcome::NewPlayer(player_id)) => player_id.player_id, _ => panic!("Registration failed.")};
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+        msg = Message { player_id: Some(player_1_id), game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame};
+        assert!(game_channel.send(msg).await.is_ok());
+        assert!(game_receiver.await.is_ok());
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+        let char = Character::new_pc(Metatypes::Dwarf, String::from("Thring Fringlonger"));
+        msg = Message { player_id: Some(player_1_id.clone()), game_id: Some(game_id.clone()), reply_channel: game_sender, msg: Request::AddCharacter(char)};
+        assert!(game_channel.send(msg).await.is_ok());
+
+        let thring_id = match game_receiver.await { Ok(Outcome::CharacterAdded((_, char_id))) => char_id, _ => panic!("Character add failed.")};
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+        let mut msg = Message { player_id: None, game_id: None, reply_channel: game_sender, msg: Request::NewPlayer(String::from("Johnny B. Goode"))};
+        assert!(game_channel.send(msg).await.is_ok());
+
+        let player_2_id = match game_receiver.await {Ok(Outcome::NewPlayer(player_id)) => player_id.player_id, _ => panic!("Registration failed.")};
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+        msg = Message { player_id: Some(player_2_id), game_id: Some(game_id), reply_channel: game_sender, msg: Request::JoinGame};
+        assert!(game_channel.send(msg).await.is_ok());
+        assert!(game_receiver.await.is_ok());
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+        let char = Character::new_pc(Metatypes::Dwarf, String::from("Thring Fringlonger"));
+        msg = Message { player_id: Some(player_2_id.clone()), game_id: Some(game_id.clone()), reply_channel: game_sender, msg: Request::AddCharacter(char)};
+        assert!(game_channel.send(msg).await.is_ok());
+
+        let hupz_id = match game_receiver.await { Ok(Outcome::CharacterAdded((_, char_id))) => char_id, _ => panic!("Character add failed.")};
+
+        (game_sender, game_receiver) = channel::<Outcome>();
+        msg = Message { player_id: Some(gm_id.clone()), game_id: Some(game_id.clone()), reply_channel: game_sender, msg: Request::GetPcCast};
+        assert!(game_channel.send(msg).await.is_ok());
+
+        let all_chars = match game_receiver.await {Ok(Outcome::CastList(chars)) => chars, _ => panic!("PC retrieval failed")};
+
+        assert_eq!(2, all_chars.len());
+        assert!(all_chars.iter().all(|c| c.id == thring_id || c.id == hupz_id));
     }
 
     #[tokio::test]

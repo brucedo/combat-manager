@@ -61,13 +61,13 @@ impl From<&Character> for SimpleCharacterView
     }
 }
 
-// #[derive(Serialize)]
+#[derive(Serialize)]
 pub struct PlayerView
 {
-    pub player_handle: Arc<String>,
+    pub player_handle: String,
     pub game_id: Uuid,
     pub game_name: String,
-    pub character_state: Option<SimpleCharacterView>
+    pub character_state: Option<Vec<SimpleCharacterView>>
 }
 
 // #[derive(Serialize)]

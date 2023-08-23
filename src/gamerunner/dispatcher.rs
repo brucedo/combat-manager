@@ -473,7 +473,7 @@ fn get_pcs(registry: &mut GameRegistry, authority: &Authority) -> Outcome
 {
     match authority.resource_role()
     {
-        Role::RoleGM(_, game_id) | Role::RolePlayer(_, game_id) => {
+        Role::RoleGM(_, game_id) => {
             if let Some(game) = registry.get_game(game_id)
             {
                 Outcome::CastList(game.get_pcs())
@@ -481,6 +481,26 @@ fn get_pcs(registry: &mut GameRegistry, authority: &Authority) -> Outcome
             else
             {
                 Outcome::Error( Error { message: String::from("The game identifier provided does not resolve to a running game."), kind: ErrorKind::UnknownId})
+            }
+        },
+        Role::RolePlayer(player_id, game_id) => {
+            match (registry.characters_by_player(game_id, player_id), registry.get_game(game_id))
+            {
+                (Some(char_ids), Some(game)) => {
+                    let characters = char_ids.iter()
+                        .map(|char_id| game.get_cast_by_id(char_id))
+                        .filter(|char_opt| char_opt.is_some())
+                        .map(|char_opt| char_opt.unwrap())
+                        .collect::<Vec<Arc<Character>>>();
+
+                    Outcome::CastList(characters)
+                },
+                (None, _) => {
+                    Outcome::Error( Error { message: String::from("Either the player has somehow disappeared, or they have no players in this game."), kind: ErrorKind::UnknownId})
+                },
+                (_, None) => {
+                    Outcome::Error( Error { message: String::from("The game identifier provided does not resolve to a running game."), kind: ErrorKind::UnknownId})
+                }
             }
         }
         _ => Outcome::Error(Error {message: String::from("Only active participants in the game may get the player roster."), kind: ErrorKind::InvalidStateAction })
