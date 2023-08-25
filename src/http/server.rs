@@ -24,7 +24,7 @@ use uuid::{Uuid, uuid};
 
 use crate::Configuration;
 use crate::http::modelview::{model_view_render, static_file_render};
-use crate::http::renders::{initialize_renders, index, static_resources, display_registration_form, register_player, create_game};
+use crate::http::renders::{initialize_renders, index, static_resources, display_registration_form, register_player, create_game, game_view};
 use crate::http::state::State;
 use crate::{gamerunner::dispatcher::{Message, Outcome, Roll}, http::{serde::{NewGame, InitiativeRoll}, metagame::Metagame},};
 
@@ -43,6 +43,7 @@ pub async fn start_server(config: &Configuration, game_channel: Sender<Message>)
 
     let app = Router::new().route("/", get(index))
         .route("/game", post(create_game))
+        .route("/game/:game_id", get(game_view))
         .route_layer
         (
             ServiceBuilder::new()

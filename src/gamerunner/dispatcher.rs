@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use tokio::sync::mpsc::{channel, Sender, Receiver};
 use tokio::sync::oneshot::Sender as OneShotSender;
@@ -18,6 +18,13 @@ pub struct Message
     pub msg: Request,
 }
 
+pub struct GameDetails
+{
+    pub name: String,
+    pub players: HashSet<PlayerId>,
+    pub gm: PlayerId
+}
+
 pub enum Request
 {
     Enumerate,
@@ -29,6 +36,7 @@ pub enum Request
     PlayerName,
     JoinGame,
     AddCharacter(Character),
+    GameDetails,
     GetFullCast,
     GetNpcCast,
     GetPcCast,
@@ -64,6 +72,7 @@ pub enum Outcome
     PlayerNotExists,
     PlayerRole(Role),
     PlayerName(String),
+    GameDetails(GameDetails),
     Created(Uuid),
     CastList(Vec<Arc<Character>>),
     Found(Option<Arc<Character>>),
@@ -223,10 +232,14 @@ pub fn dispatch_message2(registry: &mut GameRegistry, authority: &Authority) -> 
         Request::PlayerName => {
             debug!("Request is to retrieve the name of the player by their ID.");
             (get_player_name(registry, authority), None)
-        }
+        }, 
         Request::HasResourceRole => {
             debug!("Request is to retrieve the resource role for the specified game.");
             (player_role(authority), None)
+        }, 
+        Request::GameDetails => {
+            debug!("Request is to retrieve the details of a running game.");
+            (game_details(registry, authority), None)
         }
         _ => (Outcome::Error(Error { message: String::from("Not Yet Implemented"), kind: ErrorKind::InvalidStateAction }), None)
     }
@@ -1005,4 +1018,25 @@ fn player_role(authority: &Authority) -> Outcome
         Role::RoleUnregistered => Outcome::PlayerRole(Role::RoleUnregistered),
     }
     
+}
+
+fn game_details(registry: &GameRegistry, authority: &Authority) -> Outcome
+{
+    match authority.resource_role()
+    {
+        Role::RoleGM(_, game_id) | Role::RolePlayer(_, game_id) | Role::RoleObserver(_, game_id)=> {
+            match (registry.get_game_name(game_id), registry.players_by_game(game_id), registry.gm_id(game_id))
+            {
+                (Some(name), Some(players), Some(gm_d)) => 
+                    Outcome::GameDetails(GameDetails { name: name.clone(), players: players.clone(), gm: gm_d.clone() }),
+                _ => {
+                    Outcome::Error(Error{ message: String::from("One or more of the required details could not be found"), kind: ErrorKind::NoMatchingGame})
+                }
+            }
+        },
+        _ => {
+            Outcome::Error(Error{ message: String::from("Must be a registered player to get game details"), kind: ErrorKind::NotGamePlayer })
+        }
+    }
+
 }
