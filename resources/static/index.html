@@ -1,17 +1,20 @@
 <!DOCTYPE html>
+
 <head>
     <title>Shadowrun Combat Manager</title>
+    <link rel="stylesheet" type="text/css" href="../static/scm.css">
 </head>
-<body>
-<div>
-    <form action="/gen_session" method="post">
-        <div>
-            <label for="name" id="name_label">Your name, please:</label>
-            <input type="text" name="name_input" id="name_input" required>
-        </div>
-        <div>
-            <input type="submit" value="Create Game">
-        </div>
-    </form>
-</div>
+
+<body class="space-background-gradient outer-body">
+    <div class="white-text">
+        <form action="/gen_session" method="post">
+            <div>
+                <label for="name" id="name_label">Your name, please:</label>
+                <input type="text" name="name_input" id="name_input" required>
+            </div>
+            <div>
+                <input type="submit" value="Create Game">
+            </div>
+        </form>
+    </div>
 </body>

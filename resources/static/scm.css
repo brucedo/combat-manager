@@ -1,30 +1,51 @@
 .game-display-container {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: nowrap;
-    justify-content: stretch;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: stretch;
 }
 
 .game-left-box {
-    display: flex;
-    flex-direction: column;
-    flex-wrap: nowrap;
-    order: 0;
-    flex-grow: 4;
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  order: 0;
+  flex-grow: 4;
 }
 
 .game-right-box {
-    order: 1;
+  order: 1;
 }
 
 .game-notify-box {
-    order: 0;
+  order: 0;
 }
 
 .game-action-box {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: wrap;
-    order: 1;
-    flex-grow: 9;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  order: 1;
+  flex-grow: 9;
+}
+
+/* Background related css classes */
+.space-background-gradient {
+  background-image: linear-gradient(
+    99.9deg,
+    rgba(57, 55, 65, 1) 21.2%,
+    rgba(12, 80, 40, 1) 84.8%
+  );
+}
+
+/* Alignment and other space css classes */
+.outer-body {
+  text-align: center;
+  height: 94vh;
+  justify-content: center;
+}
+
+/* Text related css classes */
+.white-text {
+  color: white;
 }
