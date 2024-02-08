@@ -1,5 +1,5 @@
 use std::{collections::HashMap, sync::Arc};
-use log::debug;
+// use log::debug;
 use parking_lot::{RwLock, Mutex};
 // use rocket::{Request, request::{FromRequest, Outcome, self}, http::Cookie, time::{OffsetDateTime, Duration}};
 use uuid::Uuid;

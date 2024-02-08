@@ -1,7 +1,7 @@
 use std::{sync::Arc, collections::HashMap};
 
 use axum::{extract::State, http::Request, middleware::Next, response::Response, body::Bytes};
-use axum_macros::debug_handler;
+// use axum_macros::debug_handler;
 use log::{debug, error};
 use erased_serde::Serialize;
 

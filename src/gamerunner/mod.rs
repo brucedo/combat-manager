@@ -39,7 +39,8 @@ pub async fn game_runner(mut message_queue: Receiver<Message>)
                 // broken, and we really cannot fix that.  Right now, we do not provide a way to establish a new channel - but even when we do, 
                 // establishing a new channel will be at the discretion of the consumer.  We will just ignore the error and continue operating, 
                 // at least until we make this more robust.
-                sender.send(message.clone()).await;
+                let _ = sender.send(message.clone()).await;
+                // TODO: err variant possible for with the above warning
             }
         }
 

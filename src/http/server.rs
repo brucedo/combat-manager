@@ -1,70 +1,89 @@
-
 use std::collections::HashMap;
-use std::net::{SocketAddr, IpAddr};
+use std::net::{IpAddr, SocketAddr};
 use std::process::exit;
 use std::sync::Arc;
 
 use axum::body::{Body, Bytes};
 use axum::extract::FromRequestParts;
-use axum::http::Request;
 use axum::http::request::Parts;
+use axum::http::Request;
 use axum::middleware::Next;
 use axum::response::Response;
-use axum::{Router, middleware, async_trait};
 use axum::routing::{get, post};
+use axum::{async_trait, middleware, Router};
 use axum_extra::extract::CookieJar;
-use axum_macros::debug_handler;
+// use axum_macros::debug_handler;
 use log::{debug, error};
-use serde::Serialize;
-use tokio::sync::broadcast::error;
-use tokio::sync::{mpsc::Sender, oneshot::channel};
-use tokio::sync::oneshot::Receiver as OneShotReceiver;
+// use serde::Serialize;
+// use tokio::sync::broadcast::error;
+// use tokio::sync::{mpsc::Sender, oneshot::channel};
+use tokio::sync::mpsc::Sender;
+// use tokio::sync::oneshot::Receiver as OneShotReceiver;
 use tower::ServiceBuilder;
-use uuid::{Uuid, uuid};
+// use uuid::{Uuid, uuid};
+use uuid::Uuid;
 
-use crate::Configuration;
 use crate::http::modelview::{model_view_render, static_file_render};
-use crate::http::renders::{initialize_renders, index, static_resources, display_registration_form, register_player, create_game, game_view};
+use crate::http::renders::{
+    create_game, display_registration_form, game_view, index, initialize_renders, register_player,
+    static_resources,
+};
 use crate::http::state::State;
-use crate::{gamerunner::dispatcher::{Message, Outcome, Roll}, http::{serde::{NewGame, InitiativeRoll}, metagame::Metagame},};
+use crate::Configuration;
+// use crate::{gamerunner::dispatcher::{Message, Outcome, Roll}, http::{serde::{NewGame, InitiativeRoll}, metagame::Metagame},};
+use crate::gamerunner::dispatcher::{Message, Outcome};
 
 use super::models::Error;
-use super::modelview::{StaticView, ModelView, ModelView2};
-use super::serde::{Character, AddedCharacterJson, NewState, BeginCombat};
+// use super::modelview::{StaticView, ModelView, ModelView2};
+use super::modelview::{ModelView, ModelView2};
+// use super::serde::{Character, AddedCharacterJson, NewState, BeginCombat};
 
 // #[debug_handler]
-pub async fn start_server(config: &Configuration, game_channel: Sender<Message>)
-{
+pub async fn start_server(config: &Configuration, game_channel: Sender<Message>) {
     debug!("start_server() called");
 
     let (templates, statics) = initialize_renders(config);
 
-    let state = Arc::from(State { handlebars: templates, statics, channel: game_channel });
+    let state = Arc::from(State {
+        handlebars: templates,
+        statics,
+        channel: game_channel,
+    });
 
-    let app = Router::new().route("/", get(index))
+    let app = Router::new()
+        .route("/", get(index))
         .route("/game", post(create_game))
         .route("/game/:game_id", get(game_view))
-        .route_layer
-        (
-            ServiceBuilder::new()
-            .layer(middleware::from_fn_with_state(state.clone(), validate_registration::<Body>))
-        )
+        .route_layer(ServiceBuilder::new().layer(middleware::from_fn_with_state(
+            state.clone(),
+            validate_registration::<Body>,
+        )))
         .route("/static/*resource", get(static_resources))
         .route("/register", get(display_registration_form))
         .route("/register", post(register_player))
         .layer(
             ServiceBuilder::new()
-                .layer(middleware::from_fn_with_state(state.clone(), model_view_render::<Body>))
-                .layer(middleware::from_fn_with_state(state.clone(), static_file_render::<Body>))
+                .layer(middleware::from_fn_with_state(
+                    state.clone(),
+                    model_view_render::<Body>,
+                ))
+                .layer(middleware::from_fn_with_state(
+                    state.clone(),
+                    static_file_render::<Body>,
+                )),
         )
         .with_state(state);
 
-    let (ip_addr, port) = match (config.bind_addr.parse::<IpAddr>(), config.bind_port.parse::<u16>())
-    {
+    let (ip_addr, port) = match (
+        config.bind_addr.parse::<IpAddr>(),
+        config.bind_port.parse::<u16>(),
+    ) {
         (Ok(addr), Ok(port)) => (addr, port),
-        (_, _) => {error!("Config bind_addr and bind_port settings could not be parsed into a valid IpAddr and port number!"); exit(-1);}
+        (_, _) => {
+            error!("Config bind_addr and bind_port settings could not be parsed into a valid IpAddr and port number!");
+            exit(-1);
+        }
     };
-    
 
     debug!("Attempting to start server on 0.0.0.0:8080");
     axum::Server::bind(&SocketAddr::new(ip_addr, port))
@@ -77,112 +96,137 @@ pub struct PlayerId(pub Uuid);
 
 #[async_trait]
 impl<S> FromRequestParts<S> for PlayerId
-where S: Send + Sync,
+where
+    S: Send + Sync,
 {
     type Rejection = Response;
 
-    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection>
-    {
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         let jar = CookieJar::from_request_parts(parts, state).await.unwrap();
         if let Some(id_cookie) = jar.get("player_id") {
-            if let Ok(player_id) = Uuid::parse_str(id_cookie.value())
-            {
+            if let Ok(player_id) = Uuid::parse_str(id_cookie.value()) {
                 Ok(PlayerId(player_id))
+            } else {
+                Err(Response::builder()
+                    .extension(ModelView2 {
+                        view: "400.html",
+                        model: Box::from(Error {
+                            error: "The player ID cannot be converted into a UUID.",
+                        }),
+                    })
+                    .body(axum::body::boxed(axum::body::Empty::<Bytes>::new()))
+                    .unwrap())
             }
-            else
-            {
-                Err(Response::builder().extension(ModelView2 {view: "400.html", model: Box::from(Error{error: "The player ID cannot be converted into a UUID."})})
-                    .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
-                )
-            }
-        }
-        else {
-            Err(Response::builder().extension(ModelView2 {view: "400.html", model: Box::from(Error{error: "The player ID is missing from the request."})})
-                    .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
-                )
+        } else {
+            Err(Response::builder()
+                .extension(ModelView2 {
+                    view: "400.html",
+                    model: Box::from(Error {
+                        error: "The player ID is missing from the request.",
+                    }),
+                })
+                .body(axum::body::boxed(axum::body::Empty::<Bytes>::new()))
+                .unwrap())
         }
     }
 }
 
 async fn validate_registration<B>(
-    axum::extract::State(state): axum::extract::State<Arc<State<'_>>>, 
-    cookie_jar: CookieJar, 
-    request: Request<B>, 
-    next: Next<B>
-) -> Response
-{
-
+    axum::extract::State(state): axum::extract::State<Arc<State<'_>>>,
+    cookie_jar: CookieJar,
+    request: Request<B>,
+    next: Next<B>,
+) -> Response {
     debug!("Beginning validate registration process");
 
-    let cookie = if let Some(cookie) = cookie_jar.get("player_id"){cookie}
-    else
-    {
+    let cookie = if let Some(cookie) = cookie_jar.get("player_id") {
+        cookie
+    } else {
         debug!("No cookie named player_id present in the request.");
         return Response::builder()
             .status(302)
             .header("Location", "/register")
-            .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
+            .body(axum::body::boxed(axum::body::Empty::<Bytes>::new()))
+            .unwrap();
     };
 
     debug!("player_id cookie found.");
 
-    let player_id = if let Ok(player_id) = Uuid::parse_str(cookie.value()) {player_id}
-    else
-    {
+    let player_id = if let Ok(player_id) = Uuid::parse_str(cookie.value()) {
+        player_id
+    } else {
         debug!("player_id contents do not form a UUID");
         return Response::builder()
             .status(302)
             .header("Location", "/register")
-            .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
+            .body(axum::body::boxed(axum::body::Empty::<Bytes>::new()))
+            .unwrap();
     };
 
     debug!("player_id is a UUID.");
 
     let (reply_sender, reply_receiver) = tokio::sync::oneshot::channel();
-    let msg = Message { game_id: None, player_id: Some(player_id), reply_channel: reply_sender, msg: crate::gamerunner::dispatcher::Request::IsRegistered };
+    let msg = Message {
+        game_id: None,
+        player_id: Some(player_id),
+        reply_channel: reply_sender,
+        msg: crate::gamerunner::dispatcher::Request::IsRegistered,
+    };
 
     if let Err(_) = state.channel.clone().send(msg).await {
         error!("channel closed out early.");
         let mut error_message = HashMap::new();
         error_message.insert(String::from("error"), String::from("The GameRunner messaging channel has broken.  The administrator will likely need to restart the system."));
-        return Response::builder().extension(ModelView { view: String::from("500.html"), model: error_message })
-            .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
+        return Response::builder()
+            .extension(ModelView {
+                view: String::from("500.html"),
+                model: error_message,
+            })
+            .body(axum::body::boxed(axum::body::Empty::<Bytes>::new()))
+            .unwrap();
     }
 
     debug!("is_player message sent to channel.");
 
-    match reply_receiver.await
-    {
-        Ok(Outcome::PlayerExists) =>
-        {
+    match reply_receiver.await {
+        Ok(Outcome::PlayerExists) => {
             debug!("Player exists, continuing next.");
-            return next.run(request).await
-        },
+            return next.run(request).await;
+        }
         Ok(Outcome::PlayerNotExists) => {
             debug!("Player does not exist, redirecting to registration page.");
             Response::builder()
-            .status(302)
-            .header("Location", "/register")
-            .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
-        },
+                .status(302)
+                .header("Location", "/register")
+                .body(axum::body::boxed(axum::body::Empty::<Bytes>::new()))
+                .unwrap()
+        }
         Ok(_) => {
             error!("GameRunner sent unexpected return type.");
             let mut error_message = HashMap::new();
             error_message.insert(String::from("error"), String::from("The GameRunner is returning unreasonable responses for the questions asked.  Likely it has achieved sentience.  I would run."));
-            Response::builder().extension(ModelView { view: String::from("500.html"), model: error_message })
-                .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
+            Response::builder()
+                .extension(ModelView {
+                    view: String::from("500.html"),
+                    model: error_message,
+                })
+                .body(axum::body::boxed(axum::body::Empty::<Bytes>::new()))
+                .unwrap()
         }
         _ => {
             error!("Messaging channel to GameRunner broke.");
             let mut error_message = HashMap::new();
             error_message.insert(String::from("error"), String::from("The GameRunner messaging channel has broken.  The administrator will likely need to restart the system."));
-            Response::builder().extension(ModelView { view: String::from("500.html"), model: error_message })
-                .body(axum::body::boxed(axum::body::Empty::<Bytes>::new())).unwrap()
+            Response::builder()
+                .extension(ModelView {
+                    view: String::from("500.html"),
+                    model: error_message,
+                })
+                .body(axum::body::boxed(axum::body::Empty::<Bytes>::new()))
+                .unwrap()
         }
     }
 }
-
-
 
 // #[post("/api/game/new")]
 // pub async fn new_game(state: &State<Metagame<'_>>) -> Result<Json<NewGame>, (Status, String)>
@@ -214,7 +258,6 @@ async fn validate_registration<B>(
 //         },
 //     }
 
-    
 // }
 
 // #[get("/demo")]
@@ -244,7 +287,7 @@ async fn validate_registration<B>(
 // }
 
 // #[post("/<id>/character", data = "<character>")]
-// pub async fn add_new_character(id: Uuid, character: Json<Character<'_>>, state: &State<Metagame<'_>>) -> 
+// pub async fn add_new_character(id: Uuid, character: Json<Character<'_>>, state: &State<Metagame<'_>>) ->
 //     Result<Json<AddedCharacterJson>, (Status, String)>
 // {
 //     debug!("Received request to add a character to a game.");
@@ -265,7 +308,7 @@ async fn validate_registration<B>(
 //             match msg {
 //                 Outcome::CharacterAdded((_, char_id)) => {
 //                     let response_json = AddedCharacterJson{ game_id: id.clone(), char_id };
-//                     return Ok(Json(response_json));        
+//                     return Ok(Json(response_json));
 //                 },
 //                 Outcome::Error(err) => {
 //                     return Err((Status::BadRequest, err.message));
@@ -281,7 +324,7 @@ async fn validate_registration<B>(
 // }
 
 // #[put("/<id>/state", data = "<new_state>")]
-// pub async fn change_game_state(id: Uuid, new_state: Json<NewState>, state: &State<Metagame<'_>>) -> 
+// pub async fn change_game_state(id: Uuid, new_state: Json<NewState>, state: &State<Metagame<'_>>) ->
 //     Result<(Status, (ContentType, ())), (Status, String)>
 // {
 //     let (game_sender, game_receiver) = channel::<Outcome>();
@@ -293,13 +336,13 @@ async fn validate_registration<B>(
 //         super::serde::State::Combat(combat_data) => {
 //             // msg = RequestMessage::StartCombat(CombatSetup { reply_channel: game_sender, game_id: id, combatants: combat_data.participants.clone() });
 //             Message{ player_id: None, game_id: Some(id), reply_channel: game_sender, msg: Request::StartCombat(combat_data.participants.clone()) }
-            
+
 //         },
 //         super::serde::State::InitiativeRolls => {
 //             // RequestMessage::BeginInitiativePhase(SimpleMessage{reply_channel: game_sender, game_id: id})
 //             Message { player_id: None, game_id: Some(id), reply_channel: game_sender, msg: Request::BeginInitiativePhase }
 //         },
-//         super::serde::State::InitiativePass => 
+//         super::serde::State::InitiativePass =>
 //         {
 //             // RequestMessage::StartCombatRound(SimpleMessage{reply_channel: game_sender, game_id: id})
 //             Message { player_id: None, game_id: Some(id), reply_channel: game_sender, msg: Request::StartCombatRound }
@@ -336,12 +379,12 @@ async fn validate_registration<B>(
 //     // (
 //     //     Roll { reply_channel: game_sender, game_id: id, character_id: character_init.char_id, roll: character_init.roll }
 //     // );
-//     let msg = Message 
+//     let msg = Message
 //     {
-//         player_id: None, 
-//         game_id: Some(id), 
-//         reply_channel: game_sender, 
-//         msg: Request::AddInitiativeRoll(Roll{ character_id: character_init.char_id, roll: character_init.roll }) 
+//         player_id: None,
+//         game_id: Some(id),
+//         reply_channel: game_sender,
+//         msg: Request::AddInitiativeRoll(Roll{ character_id: character_init.char_id, roll: character_init.roll })
 //     };
 
 //     match do_send(msg, msg_channel, response_channel).await
@@ -365,7 +408,7 @@ async fn validate_registration<B>(
 //     }
 // }
 
-// async fn do_send(msg: Message, msg_channel: Sender<Message>, response_channel: OneShotReceiver<Outcome>) 
+// async fn do_send(msg: Message, msg_channel: Sender<Message>, response_channel: OneShotReceiver<Outcome>)
 //     -> Result<Outcome, String>
 // {
 
@@ -418,7 +461,6 @@ async fn validate_registration<B>(
 //     //         game_char.id = Uuid::new_v4();
 //     //     },
 //     // }
-    
-    
+
 //    game_char
 // }

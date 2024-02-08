@@ -1,17 +1,21 @@
 
-use std::{process::exit, path::PathBuf, fs::{DirEntry, self}, collections::{HashMap, HashSet}, ffi::{OsString, OsStr}, io::ErrorKind, sync::Arc};
+// use std::{process::exit, path::PathBuf, fs::{DirEntry, self}, collections::{HashMap, HashSet}, ffi::{OsString, OsStr}, io::ErrorKind, sync::Arc};
+use std::{path::PathBuf, fs::{self}, collections::{HashMap, HashSet}, ffi::{OsString}, io::ErrorKind, sync::Arc};
 use std::io::Error;
 use axum::{response::{Response, Redirect}, body::Bytes, extract::{Path, State}, Form};
 use axum_extra::extract::{CookieJar, cookie::Cookie};
-use axum_macros::debug_handler;
+// use axum_macros::debug_handler;
 use log::{debug, error};
 use uuid::Uuid;
-use handlebars::{Handlebars, template};
+// use handlebars::{Handlebars, template};
+use handlebars::{Handlebars};
 use tokio::sync::{oneshot::channel, mpsc::Sender};
 
-use crate::{gamerunner::dispatcher::{Message, Request, Outcome}, http::{session::NewSessionOutcome, models::NewGame, modelview::ModelView2}, tracker::character::Character, Configuration};
+// use crate::{gamerunner::dispatcher::{Message, Request, Outcome}, http::{session::NewSessionOutcome, models::NewGame, modelview::ModelView2}, tracker::character::Character, Configuration};
+use crate::{gamerunner::dispatcher::{Message, Request, Outcome}, http::{ models::NewGame, modelview::ModelView2}, Configuration};
 
-use super::{models::{GameSummary, GMView, IndexModel, PlayerView, SimpleCharacterView, NewCharacter, Registration}, session::Session, metagame::Metagame, modelview::{StaticView, ModelView}, statics::Statics, server::PlayerId};
+// use super::{models::{GameSummary, GMView, IndexModel, PlayerView, SimpleCharacterView, NewCharacter, Registration}, session::Session, metagame::Metagame, modelview::{StaticView, ModelView}, statics::Statics, server::PlayerId};
+use super::{models::{GameSummary, GMView, IndexModel, PlayerView, SimpleCharacterView, Registration}, modelview::{StaticView, ModelView}, statics::Statics, server::PlayerId};
 
 
 pub fn initialize_renders(config: &Configuration) -> (Handlebars<'static>, Statics)
@@ -240,7 +244,7 @@ pub async fn create_game(PlayerId(player_id): PlayerId, state: State<Arc<crate::
 
     match send_and_recv(Some(player_id), None, Request::NewGame(new_game.0.game_name), my_sender).await
     {
-        Ok(outcome) => Ok(Redirect::to("/")),
+        Ok(_outcome) => Ok(Redirect::to("/")),
         Err(response) => Err(response)
     }
 }
