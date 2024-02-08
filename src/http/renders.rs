@@ -1,6 +1,6 @@
 
 // use std::{process::exit, path::PathBuf, fs::{DirEntry, self}, collections::{HashMap, HashSet}, ffi::{OsString, OsStr}, io::ErrorKind, sync::Arc};
-use std::{path::PathBuf, fs::{self}, collections::{HashMap, HashSet}, ffi::{OsString}, io::ErrorKind, sync::Arc};
+use std::{path::PathBuf, fs::{self}, collections::{HashMap, HashSet}, ffi::OsString, io::ErrorKind, sync::Arc};
 use std::io::Error;
 use axum::{response::{Response, Redirect}, body::Bytes, extract::{Path, State}, Form};
 use axum_extra::extract::{CookieJar, cookie::Cookie};
@@ -8,7 +8,7 @@ use axum_extra::extract::{CookieJar, cookie::Cookie};
 use log::{debug, error};
 use uuid::Uuid;
 // use handlebars::{Handlebars, template};
-use handlebars::{Handlebars};
+use handlebars::Handlebars;
 use tokio::sync::{oneshot::channel, mpsc::Sender};
 
 // use crate::{gamerunner::dispatcher::{Message, Request, Outcome}, http::{session::NewSessionOutcome, models::NewGame, modelview::ModelView2}, tracker::character::Character, Configuration};
